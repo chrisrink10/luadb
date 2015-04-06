@@ -12,6 +12,13 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
+#ifdef LUADB_USE_GETOPT
+#include <unistd.h>
+#endif
+#ifdef LUADB_USE_READLINE
+#include <readline/readline.h>
+#include <readline/history.h>
+#endif
 
 #include "deps/lua/lua.h"
 #include "deps/lua/lauxlib.h"
@@ -21,30 +28,26 @@
 
 /* Handle line history and line editing for the REPL */
 #ifdef LUADB_USE_READLINE
-    #include <readline/readline.h>
-    #include <readline/history.h>
-    #define REPL_BUF_ALLOC() NULL
-    #define REPL_READLINE(out, in, buf) (buf = readline("> "))
-    #define REPL_ADD_HISTORY(buf) (buf && *buf) ? (add_history(buf)) : (void)0
-    #define REPL_BUF_FREE(buf) free(buf)
+#define REPL_BUF_ALLOC() NULL
+#define REPL_READLINE(out, in, buf) (buf = readline("> "))
+#define REPL_ADD_HISTORY(buf) (buf && *buf) ? (add_history(buf)) : (void)0
+#define REPL_BUF_FREE(buf) free(buf)
 #else
-    static const int REPL_BUFFER_SIZE = 512;
-    #define REPL_BUF_ALLOC() malloc(REPL_BUFFER_SIZE)
-    #define REPL_READLINE(out, in, buf) ((fprintf(out, "> ") >= 0) && \
-                                         (fgets(buf, REPL_BUFFER_SIZE, in)))
-    #define REPL_ADD_HISTORY(buf) (void)0
-    #define REPL_BUF_FREE(buf) (void)0
+static const int REPL_BUFFER_SIZE = 512;
+#define REPL_BUF_ALLOC() malloc(REPL_BUFFER_SIZE)
+#define REPL_READLINE(out, in, buf) ((fprintf(out, "> ") >= 0) && \
+                                     (fgets(buf, REPL_BUFFER_SIZE, in)))
+#define REPL_ADD_HISTORY(buf) (void)0
+#define REPL_BUF_FREE(buf) (void)0
 #endif
 
 /* Handle command line options */
-#ifdef LUADB_WIN32
-    #define LUADB_ARG_SYMBOL '/'
-#else
-    #define LUADB_ARG_SYMBOL '-'
-#endif
-#ifdef LUADB_USE_GETOPT
-    #include <unistd.h>
-#endif
+#ifdef _WIN32
+#define LUADB_ARG_SYMBOL '/'
+#else  //_WIN32
+#define LUADB_ARG_SYMBOL '-'
+#endif //_WIN32
+
 
 // Print the short usage line
 static void print_usage(FILE *dest, const char *cmd) {
@@ -133,7 +136,7 @@ static int parse_arguments(int argc, char *const argv[]) {
     int exit_code = EXIT_SUCCESS;
     char *fname = NULL;
 
-    #ifdef LUADB_USE_GETOPT
+#ifdef LUADB_USE_GETOPT
     int c;
 
     // Parse available arguments
@@ -159,7 +162,7 @@ static int parse_arguments(int argc, char *const argv[]) {
     if (optind < argc) {
         fname = argv[optind];
     }
-    #else
+#else  // LUADB_USE_GETOPT
     for (int i = 1; i < argc; i++) {
         size_t len = strlen(argv[i]);
         switch(argv[i][0]) {
@@ -191,7 +194,7 @@ static int parse_arguments(int argc, char *const argv[]) {
                 fname = (char*) argv[i];
         }
     }
-    #endif // LUADB_USE_GETOPT
+#endif // LUADB_USE_GETOPT
 
     // With no filename given, we can start the REPL, otherwise
     // run that script

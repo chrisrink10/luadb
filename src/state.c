@@ -11,13 +11,9 @@
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
-
-#ifndef LUADB_WIN32
+#ifndef _WIN32
 #include <libgen.h>
-#else
-static const int WIN32_DRIVE_LEN = 5;
-static const int WIN32_DIR_LEN = 150;
-#endif
+#endif  //_WIN32
 
 #include "deps/lua/lua.h"
 #include "deps/lua/lualib.h"
@@ -25,6 +21,12 @@ static const int WIN32_DIR_LEN = 150;
 
 #include "json.h"
 #include "state.h"
+
+#ifdef _WIN32
+/* WIN32 drive length constants */
+static const int WIN32_DRIVE_LEN = 5;
+static const int WIN32_DIR_LEN = 150;
+#endif //_WIN32
 
 /*
  * FORWARD DECLARATIONS
@@ -60,11 +62,11 @@ void luadb_set_relative_path(lua_State *L, const char *path) {
     const char *cur_path = lua_tolstring(L, -1, &len);
 
     // Get the directory path
-    #ifdef LUADB_WIN32
+#ifdef _WIN32
     char *newpath = luadb_win32_path(cur_path, path, len);
-    #else
+#else  //_WIN32
     char *newpath = luadb_posix_path(cur_path, path, len);
-    #endif
+#endif //_WIN32
     if (!newpath) {
         return;
     }
@@ -99,7 +101,7 @@ static void luadb_add_json_lib(lua_State *L) {
 // POSIX only: update the current Lua package path with the input
 // path and return the updated path.
 static char *luadb_posix_path(const char *cur_path, const char *path, size_t len) {
-    #ifndef LUADB_WIN32
+#ifndef _WIN32
     char *pathcpy = strdup(path);
     if (!pathcpy) {
         return NULL;
@@ -121,9 +123,9 @@ static char *luadb_posix_path(const char *cur_path, const char *path, size_t len
     memcpy(&newpath[len+dirlen+6+1], "\0", 1);
     free(pathcpy);
     return newpath;
-    #else
+#else  //_WIN32
     return NULL;
-    #endif
+#endif //_WIN32
 }
 
 // WIN32 only: update the currently Lua package path with the input
@@ -132,7 +134,7 @@ static char *luadb_posix_path(const char *cur_path, const char *path, size_t len
 // _splitpath_s function documentation is located at:
 // https://msdn.microsoft.com/en-us/library/8e46eyt7.aspx
 static char *luadb_win32_path(const char *cur_path, const char *path, size_t len) {
-    #ifdef LUADB_WIN32
+#ifdef _WIN32
     char drive[WIN32_DRIVE_LEN];
     char dir[WIN32_DIR_LEN];
 
@@ -152,7 +154,7 @@ static char *luadb_win32_path(const char *cur_path, const char *path, size_t len
     memcpy(&newpath[len+drivelen+dirlen+6], "/?.lua", 6);
     memcpy(&newpath[len+drivelen+dirlen+6+1], '\0', 1);
     return newpath;
-    #else
+#else  //_WIN32
     return NULL;
-    #endif
+#endif //_WIN32
 }

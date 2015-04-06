@@ -4,17 +4,16 @@ include(ExternalProject)
 
 set(EXECUTABLE_OUTPUT_PATH "${PROJECT_SOURCE_DIR}/bin/")
 set(LIBRARY_OUTPUT_PATH "${PROJECT_SOURCE_DIR}/bin/")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -g") #-O2 -DNDEBUG
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -Wno-format-extra-args -Wno-unused-function")
 
 # Specific compile flags
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUA_COMPAT_5_2 -DLUA_USE_APICHECK")
-if(${UNIX})
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUADB_USE_READLINE")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -g") #-O2 -DNDEBUG
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -Wno-format-extra-args -Wno-unused-function")
+
+if (${UNIX})
     find_library(LIB_READLINE readline)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUADB_USE_READLINE")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUADB_USE_GETOPT")
-elseif(${WIN32})
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUADB_WIN32")
 endif(${UNIX})
 
 # LuaDB native files

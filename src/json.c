@@ -19,7 +19,11 @@
 #include "json.h"
 
 static const char *const JSON_ARRAY_METAFIELD = "_json_array";
+#ifndef _WIN32
 static const int JSON_STRING_KEY_DIGITS = 15;
+#else  //_WIN32
+#define JSON_STRING_KEY_DIGITS 15
+#endif //_WIN32
 
 /*
  * FORWARD DECLARATIONS
