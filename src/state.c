@@ -88,6 +88,8 @@ static void luadb_add_json_lib(lua_State *L) {
     static luaL_Reg json_lib[] = {
             { "decode", luadb_json_decode },
             { "encode", luadb_json_encode },
+            { "isarray", luadb_json_isarray },
+            { "makearray", luadb_json_makearray },
     };
 
     luaL_newlib(L, json_lib);

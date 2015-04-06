@@ -28,9 +28,10 @@ static const int JSON_STRING_KEY_DIGITS = 15;
 static inline void json_to_lua_value(lua_State *L, JsonNode *json);
 static JsonNode *lua_value_to_json(lua_State *L);
 static void json_to_lua_value_private(lua_State *L, JsonNode *json, int i);
-static inline void set_table_as_json_array(lua_State *L);
+static inline void set_table_as_json_array(lua_State *L, int idx);
 static JsonNode *lua_table_to_json_private(lua_State *L, int idx);
 static bool lua_number_is_int(lua_Number n, int *v);
+static inline bool lua_table_is_json_array(lua_State *L, int idx);
 
 /*
  * PUBLIC FUNCTIONS
@@ -64,6 +65,29 @@ int luadb_json_encode(lua_State *L) {
     json_delete(json);
     free(str);
     return 1;
+}
+
+int luadb_json_isarray(lua_State *L) {
+    int istable = lua_istable(L, 1);
+    if (!istable) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+
+    int isarray = (int)lua_table_is_json_array(L, 1);
+    lua_pushboolean(L, isarray);
+    return 1;
+}
+
+int luadb_json_makearray(lua_State *L) {
+    int istable = lua_istable(L, 1);
+    if (!istable) {
+        luaL_error(L, "can only make tables into JSON arrays");
+        return 0;
+    }
+
+    set_table_as_json_array(L, 1);
+    return 0;
 }
 
 /*
@@ -132,6 +156,7 @@ static void json_to_lua_value_private(lua_State *L, JsonNode *json, int i) {
         switch (json->parent->tag) {
             case JSON_ARRAY:
                 lua_pushinteger(L, i);
+                i = 1;  // Reset the automatic table indices if this is a nested table
                 break;
             case JSON_OBJECT:
                 lua_pushstring(L, json->key);
@@ -152,7 +177,7 @@ static void json_to_lua_value_private(lua_State *L, JsonNode *json, int i) {
         case JSON_ARRAY:
             lua_newtable(L);
             // TODO: for some reason, I cannot set a metatable on this table
-            //set_table_as_json_array(L);
+            //set_table_as_json_array(L, lua_gettop(L)-1);
             json_foreach(child, json) {
                 json_to_lua_value_private(L, child, i++);
             }
@@ -179,14 +204,14 @@ static void json_to_lua_value_private(lua_State *L, JsonNode *json, int i) {
 
 // Set the value at the top of the stack as a JSON array
 // by way of marking it with the meta-field _json_array
-static inline void set_table_as_json_array(lua_State *L) {
+static inline void set_table_as_json_array(lua_State *L, int idx) {
     luaL_checkstack(L, 3, "out of memory");
-    if (!lua_getmetatable(L, -1)) {
+    if (!lua_getmetatable(L, idx)) {
         lua_createtable(L, 0, 1);
     }
     lua_pushboolean(L, 1);
     lua_setfield(L, -2, JSON_ARRAY_METAFIELD);
-    lua_setmetatable(L, -2);
+    lua_setmetatable(L, idx);
 }
 
 // Convert a Lua table (ONLY) to JsonNode structure.
@@ -203,7 +228,7 @@ static JsonNode *lua_table_to_json_private(lua_State *L, int idx) {
     luaL_checkstack(L, 2, "out of memory");
 
     // Decide whether or not we're creating an array
-    bool as_array = (luaL_getmetafield(L, idx, JSON_ARRAY_METAFIELD) != LUA_TNIL);
+    bool as_array = lua_table_is_json_array(L, idx);
     json = (as_array) ? json_mkarray() : json_mkobject();
 
     // Traverse the Lua table
@@ -254,4 +279,9 @@ static JsonNode *lua_table_to_json_private(lua_State *L, int idx) {
 static bool lua_number_is_int(lua_Number n, int *v) {
     *v = (int)n;
     return ((n - (double)*v) == 0.0);
+}
+
+// Return true if the value at the given index is considered a JSON array.
+static inline bool lua_table_is_json_array(lua_State *L, int idx) {
+    return (luaL_getmetafield(L, idx, JSON_ARRAY_METAFIELD) != LUA_TNIL);
 }

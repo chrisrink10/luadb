@@ -112,18 +112,26 @@ function LuaTest:run()
     if case["runner"] == nil then
       error(string.format("no test runner defined for '%s'", name))
     end
-    case.runner()
 
-    print(string.format("%d. %s (fails: %d, successes: %d)",
-          i, name, case.fails, case.successes))
+    -- Generate test case result string
+    local res
+    if pcall(case.runner) then
+      res = string.format("fails: %d, successes: %d", case.fails, case.successes)
+    else
+      res = "FATAL ERROR"
+    end
 
+    -- Print the case result
+    print(string.format("%d. %s (%s)", i, name, res))
+
+    -- Print individual failed cases
     if case.fails > 0 then
       for k, info in pairs(case.fail_info) do
         print(string.format("    %s", info))
       end
     end
 
-    i = i+1
+    i = i+1 -- Increment our counter
   end
 end
 

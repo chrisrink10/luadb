@@ -21,12 +21,13 @@ local lt = LuaTest.new("json")
 
 -- Test that empty arrays are properly marshaled and unmarshaled
 function test_empty_arrays()
-	local json_str = "{\"items\":[],\"properties\":{}}"
+	local json_str = '{"items":[],"properties":{}}'
 	local decoded = json.decode(json_str)
 	local mt = getmetatable(decoded["items"])
 	lt:assert_table_equal(decoded, { ["items"] = {}, ["properties"] = {} })
+	lt:assert_equal(json.isarray(decoded["items"]), true)
 	lt:assert_not_equal(mt, nil)
-	-- lt:assert_equal(mt["_json_array"], true)
+	--lt:assert_equal(mt["_json_array"], true)
 
 	local encoded = json.encode(decoded)
 	lt:assert_equal(json_str, encoded)
@@ -55,12 +56,12 @@ function test_numeric_keys()
 	local xt = {[1] = 1, a = 2}
 	table.sort(xt)
 	local x = json.encode(xt)
-	lt:assert_equal(x, "{\"a\":2,\"1\":1}")
+	lt:assert_equal(x, '{"a":2,"1":1}')
 
 	local yt = {[44] = 3, [67] = 5, a = 9}
 	table.sort(yt)
 	local y = json.encode(yt)
-	lt:assert_equal(y, "{\"44\":3,\"a\":9,\"67\":5}")
+	lt:assert_equal(y, '{"44":3,"a":9,"67":5}')
 end
 
 -- Test that reference cycles do not result in infinite loops
@@ -82,8 +83,8 @@ function test_basic_decode()
 	lt:assert_equal(json.decode("15.54"), 15.54)
 	lt:assert_equal(json.decode("10e2"), 1000)
 	lt:assert_equal(json.decode("0"), 0)
-	lt:assert_equal(json.decode("\"string\""), "string")
-	lt:assert_equal(json.decode("\"\""), "")
+	lt:assert_equal(json.decode('"string"'), "string")
+	lt:assert_equal(json.decode('""'), "")
 	lt:assert_table_equal(json.decode("[]"), {})
 	lt:assert_table_equal(json.decode("{}"), {})
 end
@@ -91,17 +92,72 @@ end
 -- Test that simple arrays are decoded correctly
 function test_array_decode()
 	local t1 = {1, "string", true, 8}
-	lt:assert_table_equal(json.decode("[1, \"string\", true, 8]"), t1)
+	lt:assert_table_equal(json.decode('[1, "string", true, 8]'), t1)
 
-	local t2 = { { 1, 8, "string" }, 8, "a", { ["12"] = "jam" } }
-  lt:assert_table_equal(json.decode("[[1, 8, \"string\"], 8, \"a\", {\"12\": \"jam\"}]"), t2)
+	local t2 = { { 1, 8, "string" }, 8, "a", { "12", "jam"} }
+  lt:assert_table_equal(json.decode('[[1, 8, "string"], 8, "a", ["12", "jam"]]'), t2)
+
+	-- Make sure our automatic table indices are correctly reset each nested table
+	local t3 = { 1, { 2, 3 }, { 4, { 5, 6 }} }
+  lt:assert_table_equal(json.decode('[1, [2, 3], [4, [5, 6]]]'), t3)
+
+	-- Make sure we get our metatable
 end
 
 -- Test that simple objects are decoded correctly
 function test_object_decode()
-	
+	local t1 = { key1 = 1, ["string"] = true, ["3"] = {1, 2, 8}, twelve = "forty"}
+	local d1 = '{"key1":1,"string":true,"3":[1,2,8],"twelve":"forty"}'
+	lt:assert_table_equal(json.decode(d1), t1)
+
+	local t2 = {
+		id = "32",
+		name = "Jon Snow",
+		address = { "1 Lord Commanders Tower" , "Castle Black, The North" },
+		age = 14,
+		has_pet = true,
+		siblings = {
+			{ name = "Sansa Stark", pet = "Lady", address = { "1 Winterfell Lane", "Winterfell Castle" } },
+			{ name = "Arya Stark", pet = "Nymeria", address = nil }
+		}
+	}
+	local d2 = ('{"id":"32","name":"Jon Snow",' ..
+							'"address":["1 Lord Commanders Tower","Castle Black, The North"],' ..
+							'"age":14,"has_pet":true,"siblings":' ..
+							'[{"name":"Sansa Stark","pet":"Lady","address":["1 Winterfell Lane","Winterfell Castle"]},' ..
+							'{"name":"Arya Stark","pet":"Nymeria","address":null}]}')
+	lt:assert_table_equal(json.decode(d2), t2)
 end
 
+
+--[[ UTILITY FUNCTION TESTS ]]--
+
+-- Test that we can easily detect Lua tables which are JSON arrays
+function test_isarray()
+	lt:assert_equal(json.isarray({}), false)
+
+	local t = {}
+	setmetatable(t, {_json_array = true})
+	lt:assert_equal(json.isarray(t), true)
+end
+
+-- Test that we can readily make Lua tables into JSON arrays
+function test_makearray()
+	local t = {}
+
+	local mt1 = getmetatable(t)
+	lt:assert_equal(mt1, nil)
+
+	json.makearray(t)
+	local mt2 = getmetatable(t)
+	lt:assert_not_equal(mt2, nil)
+	lt:assert_equal(mt2["_json_array"], true)
+	lt:assert_equal(json.isarray(t), true)
+
+	-- Make sure we can't make non-table values into JSON arrays
+	local err = pcall(json.makearray, "string")
+	lt:assert_equal(err, false)
+end
 
 --[[ ADD TEST CASES ]]--
 
@@ -118,6 +174,15 @@ end)
 lt:add_case("decode", function()
 	test_basic_decode()
 	test_array_decode()
+	test_object_decode()
+end)
+
+lt:add_case("isarray", function()
+	test_isarray()
+end)
+
+lt:add_case("makearray", function()
+	test_makearray()
 end)
 
 -- Return the test module
