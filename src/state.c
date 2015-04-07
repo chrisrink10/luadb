@@ -20,6 +20,7 @@
 #include "deps/lua/lauxlib.h"
 
 #include "json.h"
+#include "lmdb.h"
 #include "state.h"
 
 #ifdef _WIN32
@@ -33,6 +34,7 @@ static const int WIN32_DIR_LEN = 150;
  */
 
 static void luadb_add_json_lib(lua_State *L);
+static void luadb_add_lmdb_lib(lua_State *L);
 static char *luadb_posix_path(const char *cur_path, const char *path, size_t len);
 static char *luadb_win32_path(const char *cur_path, const char *path, size_t len);
 
@@ -45,8 +47,10 @@ lua_State *luadb_new_state() {
     if (!L) {
         return NULL;
     }
+
     luaL_openlibs(L);
     luadb_add_json_lib(L);
+    luadb_add_lmdb_lib(L);
 
     return L;
 }
@@ -96,6 +100,19 @@ static void luadb_add_json_lib(lua_State *L) {
 
     luaL_newlib(L, json_lib);
     lua_setglobal(L, "json");
+}
+
+// Add the LMDB library functions to the Lua state.
+static void luadb_add_lmdb_lib(lua_State *L) {
+    assert(L);
+
+    static luaL_Reg lmdb_lib[] = {
+            { "open", luadb_lmdb_open_env },
+            { "version", luadb_lmdb_version },
+    };
+
+    luaL_newlib(L, lmdb_lib);
+    lua_setglobal(L, "lmdb");
 }
 
 // POSIX only: update the current Lua package path with the input

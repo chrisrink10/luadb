@@ -19,6 +19,7 @@ endif(${UNIX})
 # LuaDB native files
 set(SOURCE_FILES src/luadb.h
                  src/json.c
+                 src/lmdb.c
                  src/main.c
                  src/state.c)
 
