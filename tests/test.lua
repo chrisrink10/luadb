@@ -114,11 +114,11 @@ function LuaTest:run()
     end
 
     -- Generate test case result string
-    local res
-    if pcall(case.runner) then
+    local res, msg = pcall(case.runner)
+    if res then
       res = string.format("fails: %d, successes: %d", case.fails, case.successes)
     else
-      res = "FATAL ERROR"
+      res = string.format("FATAL ERROR: %s", msg)
     end
 
     -- Print the case result
