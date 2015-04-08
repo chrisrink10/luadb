@@ -1,30 +1,129 @@
+#############################################################################
+# LuaDB :: CMakeLists.txst
+#
+# CMake directives for building LuaDB
+#
+# Author:  Chris Rink <chrisrink10@gmail.com>
+#
+# License: MIT (see LICENSE document at source tree root)
+#############################################################################
+
 cmake_minimum_required(VERSION 3.1)
 project(luadb)
-include(ExternalProject)
+include(CheckIncludeFiles)
+include(CheckFunctionExists)
 
 set(EXECUTABLE_OUTPUT_PATH "${PROJECT_SOURCE_DIR}/bin/")
 set(LIBRARY_OUTPUT_PATH "${PROJECT_SOURCE_DIR}/bin/")
 
-# Specific compile flags
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUA_COMPAT_5_2 -DLUA_USE_APICHECK")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -g") #-O2 -DNDEBUG
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -Wno-format-extra-args -Wno-unused-function")
+##############################
+# Check Capabilities
+##############################
 
-if (${UNIX})
-    find_library(LIB_READLINE readline)
+check_include_files(arpa/inet.h HAVE_ARPA_INET_H)
+check_include_files(dlfcn.h HAVE_DLFCN_H)
+check_include_files(inttypes.h HAVE_INTTYPES_H)
+check_include_files(limits.h HAVE_LIMITS_H)
+check_include_files(memory.h HAVE_MEMORY_H)
+check_include_files(netdb.h HAVE_NETDB_H)
+check_include_files(netinet/in.h HAVE_NETINET_IN_H)
+check_include_files(pthread.h HAVE_PTHREAD)
+check_include_files(stdint.h HAVE_STDINT_H)
+check_include_files(stdlib.h HAVE_STDLIB_H)
+check_include_files(strings.h HAVE_STRINGS_H)
+check_include_files(string.h HAVE_STRING_H)
+check_include_files(sys/param.h HAVE_SYS_PARAM_H)
+check_include_files(sys/socket.h HAVE_SYS_SOCKET_H)
+check_include_files(sys/stat.h HAVE_SYS_STAT_H)
+check_include_files(sys/time.h HAVE_SYS_TIME_H)
+check_include_files(sys/types.h HAVE_SYS_TYPES_H)
+check_include_files(unistd.h HAVE_UNISTD_H)
+if(WIN32)
+    check_include_files(windows.h HAVE_WINDOWS_H)
+endif(WIN32)
+
+check_function_exists(strerror HAVE_STRERROR)
+
+find_library(LIB_READLINE readline)
+find_library(LIB_SOCKET socket)
+if (LIB_SOCKET_FOUND)
+    set(HAVE_LIBSOCKET 1)
+endif(LIB_SOCKET_FOUND)
+find_library(LIB_NSL nsl)
+if (LIB_NSL_FOUND)
+    set(HAVE_LIBNSL 1)
+endif(LIB_NSL_FOUND)
+
+##############################
+# Build Flags
+##############################
+
+# Cache the existing flags
+set(LUADB_CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+
+# Specific compile flags
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUA_USE_APICHECK")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99") #-O2 -DNDEBUG
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -Wall -Wno-format-extra-args")
+
+# FastCGI flags
+set(LUADB_FCGI_C_FLAGS "-Wno-pointer-sign -Wno-unused-function -Wno-unused-const-variable")
+configure_file(${PROJECT_SOURCE_DIR}/src/deps/fcgi/fcgi_config.h.in
+               ${PROJECT_SOURCE_DIR}/src/deps/fcgi/fcgi_config.h)
+
+# LuaDB Flags
+set(LUADB_C_FLAGS "-Werror -Wno-unused-function")
+if (HAVE_UNISTD_H)
+    set(LUADB_C_FLAGS "${LUADB_C_FLAGS} -DLUADB_USE_GETOPT")
+endif(HAVE_UNISTD_H)
+
+# LMDB Flags
+set(LUADB_LMDB_C_FLAGS "-pthread -O2 -g -Wno-unused-parameter -Wbad-function-cast -Wuninitialized")
+
+# Specify the GNU99 standard if we're using MINGW
+if (MINGW)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99")
+endif(MINGW)
+
+# Test for readline
+if(LIB_READLINE_FOUND)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUADB_USE_READLINE")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUADB_USE_GETOPT")
-endif(${UNIX})
+endif(LIB_READLINE_FOUND)
+
+##############################
+# Source Files
+##############################
 
 # LuaDB native files
 set(SOURCE_FILES src/luadb.h
                  src/json.c
                  src/lmdb.c
                  src/main.c
-                 src/state.c)
+                 src/state.c
+                 src/util.c)
+
+##############################
+# Create Libraries
+##############################
+
+# FastCGI library files
+set (FCGI_LIB_SRCS src/deps/fcgi/fcgiapp.c
+                   src/deps/fcgi/fastcgi.h
+                   src/deps/fcgi/fcgimisc.h
+                   src/deps/fcgi/fcgios.h)
+if(${WIN32})
+    set (FCGI_LIB_SRCS ${FCGI_LIB_SRCS} src/deps/fcgi/os_win32.c)
+elseif(${UNIX})
+    set (FCGI_LIB_SRCS ${FCGI_LIB_SRCS} src/deps/fcgi/os_unix.c)
+endif(${WIN32})
+add_library(fastcgi STATIC ${FCGI_LIB_SRCS})
+set_target_properties(fastcgi PROPERTIES
+    COMPILE_FLAGS "${LUADB_FCGI_C_FLAGS}"
+)
 
 # CCAN JSON library files
 set(JSON_LIB_SRCS src/deps/json/json.c)
+add_library(json STATIC ${JSON_LIB_SRCS})
 
 # Lua core files
 set (LUA_CORE_SRCS src/deps/lua/lapi.c
@@ -47,6 +146,7 @@ set (LUA_CORE_SRCS src/deps/lua/lapi.c
                    src/deps/lua/lundump.c
                    src/deps/lua/lvm.c
                    src/deps/lua/lzio.c)
+add_library(luacore STATIC ${LUA_CORE_SRCS})
 
 # Lua library files
 set (LUA_LIB_SRCS src/deps/lua/lauxlib.c
@@ -62,16 +162,42 @@ set (LUA_LIB_SRCS src/deps/lua/lauxlib.c
                   src/deps/lua/lutf8lib.c
                   src/deps/lua/loadlib.c
                   src/deps/lua/linit.c)
+add_library(lual STATIC ${LUA_LIB_SRCS})
 
 # LMDB library files
 set(LMDB_LIB_SRCS src/deps/lmdb/lmdb.h
                   src/deps/lmdb/mdb.c
                   src/deps/lmdb/midl.c)
+add_library(lmdb STATIC ${LMDB_LIB_SRCS})
+set_target_properties(lmdb PROPERTIES
+    COMPILE_FLAGS "${LUADB_LMDB_C_FLAGS}"
+)
+if(WIN32)
+    find_library(LIB_KERNEL32 Kernel32)
+    if (LIB_KERNEL32_FOUND)
+        target_link_libraries(lmdb LIB_KERNEL32)
+    endif(LIB_KERNEL32_FOUND)
+endif(WIN32)
 
-add_executable(luadb ${SOURCE_FILES}
-                     ${LUA_CORE_SRCS}
-                     ${LUA_LIB_SRCS}
-                     ${LMDB_LIB_SRCS}
-                     ${JSON_LIB_SRCS})
+##############################
+# Generate Executable
+##############################
 
-target_link_libraries(luadb ${LIB_READLINE})
+add_executable(luadb ${SOURCE_FILES})
+set_target_properties(luadb PROPERTIES
+    COMPILE_FLAGS "${LUADB_C_FLAGS}"
+)
+
+##############################
+# Link in Libraries
+##############################
+
+target_link_libraries(luadb fastcgi)
+target_link_libraries(luadb json)
+target_link_libraries(luadb luacore)
+target_link_libraries(luadb lual)
+target_link_libraries(luadb lmdb)
+
+if (LIB_READLINE_FOUND)
+    target_link_libraries(luadb ${LIB_READLINE})
+endif(LIB_READLINE_FOUND)

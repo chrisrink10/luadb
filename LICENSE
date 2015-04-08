@@ -30,3 +30,6 @@ which is available under the MIT license. For details, see src/deps/json/.
 
 This product bundles LMDB, which is available under the OpenLDAP Public
 License.  For details, see src/deps/lmdb/.
+
+This product bundles FastCGI, which is available under the FastCGI license.
+For details, see src/deps/fcgi/.
