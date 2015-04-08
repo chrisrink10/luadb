@@ -17,6 +17,7 @@
 #include "deps/json/json.h"
 
 #include "json.h"
+#include "util.h"
 
 static const char *const JSON_ARRAY_METAFIELD = "_json_array";
 #ifndef _WIN32
@@ -253,7 +254,7 @@ static JsonNode *lua_table_to_json_private(lua_State *L, int idx) {
                 key = &numstr[0];
                 break;
             case LUA_TSTRING:
-                key = strndup(luaL_tolstring(L, idx+1, &len), len+1);
+                key = luadb_strndup(luaL_tolstring(L, idx+1, &len), len+1);
                 lua_pop(L, 1);
                 break;
             default:

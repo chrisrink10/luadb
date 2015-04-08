@@ -11,9 +11,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
-#ifndef _WIN32
 #include <libgen.h>
-#endif  //_WIN32
 
 #include "deps/lua/lua.h"
 #include "deps/lua/lualib.h"
@@ -24,9 +22,9 @@
 #include "state.h"
 
 #ifdef _WIN32
-/* WIN32 drive length constants */
-static const int WIN32_DRIVE_LEN = 5;
-static const int WIN32_DIR_LEN = 150;
+static const char *const PATH_SEPARATOR = "\\";
+#else  //_WIN32
+static const char *const PATH_SEPARATOR = "/";
 #endif //_WIN32
 
 /*
@@ -35,8 +33,7 @@ static const int WIN32_DIR_LEN = 150;
 
 static void luadb_add_json_lib(lua_State *L);
 static void luadb_add_lmdb_lib(lua_State *L);
-static char *luadb_posix_path(const char *cur_path, const char *path, size_t len);
-static char *luadb_win32_path(const char *cur_path, const char *path, size_t len);
+static char *luadb_path(const char *cur_path, size_t len, const char *path);
 
 /*
  * FORWARD DECLARATIONS
@@ -66,11 +63,7 @@ void luadb_set_relative_path(lua_State *L, const char *path) {
     const char *cur_path = lua_tolstring(L, -1, &len);
 
     // Get the directory path
-#ifdef _WIN32
-    char *newpath = luadb_win32_path(cur_path, path, len);
-#else  //_WIN32
-    char *newpath = luadb_posix_path(cur_path, path, len);
-#endif //_WIN32
+    char *newpath = luadb_path(cur_path, len, path);
     if (!newpath) {
         return;
     }
@@ -80,6 +73,7 @@ void luadb_set_relative_path(lua_State *L, const char *path) {
     lua_pushstring(L, newpath);
     lua_setfield(L, -2, "path");
     lua_pop(L, 1);
+    free(newpath);
     return;
 }
 
@@ -115,63 +109,27 @@ static void luadb_add_lmdb_lib(lua_State *L) {
     lua_setglobal(L, "lmdb");
 }
 
-// POSIX only: update the current Lua package path with the input
+// Update the current Lua package path with the input
 // path and return the updated path.
-static char *luadb_posix_path(const char *cur_path, const char *path, size_t len) {
-#ifndef _WIN32
-    char *pathcpy = strdup(path);
+static char *luadb_path(const char *cur_path, size_t len, const char *path) {
+    // Create a copy of path, since dirname may modify the output
+    size_t pathlen = strlen(path);
+    char *pathcpy = malloc(pathlen + 1);
     if (!pathcpy) {
         return NULL;
     }
+    memcpy(pathcpy, path, pathlen);
+    pathcpy[pathlen] = '\0';
 
+    // Create space for the new path
     char *dir = dirname(pathcpy);
-    size_t dirlen = strlen(dir);
-
-    char *newpath = malloc(len + dirlen + 6 + 2);
+    char *newpath = malloc(len + pathlen + 6 + 2);
     if (!newpath) {
-        free(pathcpy);
         return NULL;
     }
 
-    memcpy(newpath, cur_path, len);
-    memcpy(&newpath[len], ";", 1);
-    memcpy(&newpath[len+1], dir, dirlen);
-    memcpy(&newpath[len+dirlen+1], "/?.lua", 6);
-    memcpy(&newpath[len+dirlen+6+1], "\0", 1);
+    // Generate the new path
+    sprintf(newpath, "%s;%s%s?.lua", cur_path, dir, PATH_SEPARATOR);
     free(pathcpy);
     return newpath;
-#else  //_WIN32
-    return NULL;
-#endif //_WIN32
-}
-
-// WIN32 only: update the currently Lua package path with the input
-// path and return the updated path.
-//
-// _splitpath_s function documentation is located at:
-// https://msdn.microsoft.com/en-us/library/8e46eyt7.aspx
-static char *luadb_win32_path(const char *cur_path, const char *path, size_t len) {
-#ifdef _WIN32
-    char drive[WIN32_DRIVE_LEN];
-    char dir[WIN32_DIR_LEN];
-
-    _splitpath_s(path, &drive, WIN32_DRIVE_LEN, &dir, WIN32_DIR_LEN, NULL, 0, NULL, 0);
-
-    size_t drivelen = strlen(drive);
-    size_t dirlen = strlen(dir);
-    char *newpath = malloc(len + drivelen + dirlen + 6 + 2);
-    if (!newpath) {
-        return NULL;
-    }
-
-    memcpy(newpath, cur_path, len);
-    memcpy(&newpath[len], ";", 1);
-    memcpy(&newpath[len+1], drive, drivelen);
-    memcpy(&newpath[len+drivelen], dir, dirlen);
-    memcpy(&newpath[len+drivelen+dirlen+6], "/?.lua", 6);
-    memcpy(&newpath[len+drivelen+dirlen+6+1], '\0', 1);
-    return newpath;
-#else  //_WIN32
-    return NULL;
-#endif //_WIN32
 }
