@@ -12,6 +12,9 @@ cmake_minimum_required(VERSION 3.1)
 project(luadb)
 include(CheckIncludeFiles)
 include(CheckFunctionExists)
+include(CheckPrototypeDefinition)
+include(CheckStructHasMember)
+include(CheckSymbolExists)
 
 set(EXECUTABLE_OUTPUT_PATH "${PROJECT_SOURCE_DIR}/bin/")
 set(LIBRARY_OUTPUT_PATH "${PROJECT_SOURCE_DIR}/bin/")
@@ -19,6 +22,13 @@ set(LIBRARY_OUTPUT_PATH "${PROJECT_SOURCE_DIR}/bin/")
 ##############################
 # Check Capabilities
 ##############################
+
+#check_prototype_definition(fileno 1 2 3 HAVE_FILENO_PROTO)
+
+check_symbol_exists(fpos_t stdio.h HAVE_FPOS)
+check_symbol_exists(socklen_t sys/socket.h HAVE_SOCKLEN)
+
+check_struct_has_member(sockaddr_un sun_len sys/un.h HAVE_SOCKADDR_UN_SUN_LEN)
 
 check_include_files(arpa/inet.h HAVE_ARPA_INET_H)
 check_include_files(dlfcn.h HAVE_DLFCN_H)
@@ -46,13 +56,13 @@ check_function_exists(strerror HAVE_STRERROR)
 
 find_library(LIB_READLINE readline)
 find_library(LIB_SOCKET socket)
-if (LIB_SOCKET_FOUND)
+if (LIB_SOCKET)
     set(HAVE_LIBSOCKET 1)
-endif(LIB_SOCKET_FOUND)
+endif(LIB_SOCKET)
 find_library(LIB_NSL nsl)
-if (LIB_NSL_FOUND)
+if (LIB_NSL)
     set(HAVE_LIBNSL 1)
-endif(LIB_NSL_FOUND)
+endif(LIB_NSL)
 
 ##############################
 # Build Flags
@@ -64,7 +74,8 @@ set(LUADB_CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 # Specific compile flags
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUA_USE_APICHECK")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99") #-O2 -DNDEBUG
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -Wall -Wno-format-extra-args")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wno-format-extra-args")
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g")
 
 # FastCGI flags
 set(LUADB_FCGI_C_FLAGS "-Wno-pointer-sign -Wno-unused-function -Wno-unused-const-variable")
@@ -86,9 +97,9 @@ if (MINGW)
 endif(MINGW)
 
 # Test for readline
-if(LIB_READLINE_FOUND)
+if(LIB_READLINE)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUADB_USE_READLINE")
-endif(LIB_READLINE_FOUND)
+endif(LIB_READLINE)
 
 ##############################
 # Source Files
@@ -198,6 +209,6 @@ target_link_libraries(luadb luacore)
 target_link_libraries(luadb lual)
 target_link_libraries(luadb lmdb)
 
-if (LIB_READLINE_FOUND)
+if (LIB_READLINE)
     target_link_libraries(luadb ${LIB_READLINE})
-endif(LIB_READLINE_FOUND)
+endif(LIB_READLINE)
