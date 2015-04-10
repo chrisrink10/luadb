@@ -12,6 +12,11 @@
 #define LUADB_LMDB_H
 
 /**
+ * @brief Add the LMDB library to the global Lua state.
+ */
+void luadb_add_lmdb_lib(lua_State *L);
+
+/**
  * @brief Create a new LMDB transaction.
  */
 int luadb_lmdb_open_env(lua_State *L);

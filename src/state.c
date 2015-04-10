@@ -31,8 +31,6 @@ static const char *const PATH_SEPARATOR = "/";
  * FORWARD DECLARATIONS
  */
 
-static void luadb_add_json_lib(lua_State *L);
-static void luadb_add_lmdb_lib(lua_State *L);
 static char *luadb_path(const char *cur_path, size_t len, const char *path);
 
 /*
@@ -80,34 +78,6 @@ void luadb_set_relative_path(lua_State *L, const char *path) {
 /*
  * PRIVATE FUNCTIONS
  */
-
-// Add the JSON library functions to the Lua state.
-static void luadb_add_json_lib(lua_State *L) {
-    assert(L);
-
-    static luaL_Reg json_lib[] = {
-            { "decode", luadb_json_decode },
-            { "encode", luadb_json_encode },
-            { "isarray", luadb_json_isarray },
-            { "makearray", luadb_json_makearray },
-    };
-
-    luaL_newlib(L, json_lib);
-    lua_setglobal(L, "json");
-}
-
-// Add the LMDB library functions to the Lua state.
-static void luadb_add_lmdb_lib(lua_State *L) {
-    assert(L);
-
-    static luaL_Reg lmdb_lib[] = {
-            { "open", luadb_lmdb_open_env },
-            { "version", luadb_lmdb_version },
-    };
-
-    luaL_newlib(L, lmdb_lib);
-    lua_setglobal(L, "lmdb");
-}
 
 // Update the current Lua package path with the input
 // path and return the updated path.

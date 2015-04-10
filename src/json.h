@@ -12,6 +12,11 @@
 #define LUADB_JSON_H
 
 /**
+ * @brief Add the JSON library to the global Lua state.
+ */
+void luadb_add_json_lib(lua_State *L);
+
+/**
  * @brief C function for the Lua "json.decode(...)".
  *
  * Decode a JSON value from a string into a valid Lua value. Objects

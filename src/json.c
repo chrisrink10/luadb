@@ -42,6 +42,20 @@ static inline bool lua_table_is_json_array(lua_State *L, int idx);
  * PUBLIC FUNCTIONS
  */
 
+void luadb_add_json_lib(lua_State *L) {
+    assert(L);
+
+    static luaL_Reg json_lib[] = {
+            { "decode", luadb_json_decode },
+            { "encode", luadb_json_encode },
+            { "isarray", luadb_json_isarray },
+            { "makearray", luadb_json_makearray },
+    };
+
+    luaL_newlib(L, json_lib);
+    lua_setglobal(L, "json");
+}
+
 int luadb_json_decode(lua_State *L) {
     size_t len;
     const char *str = luaL_checklstring(L, 1, &len);
