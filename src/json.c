@@ -38,6 +38,15 @@ static JsonNode *lua_table_to_json_private(lua_State *L, int idx);
 static bool lua_number_is_int(lua_Number n, int *v);
 static inline bool lua_table_is_json_array(lua_State *L, int idx);
 
+// Library functions
+static luaL_Reg json_lib_funcs[] = {
+        { "decode", luadb_json_decode },
+        { "encode", luadb_json_encode },
+        { "isarray", luadb_json_isarray },
+        { "makearray", luadb_json_makearray },
+        { NULL, NULL },
+};
+
 /*
  * PUBLIC FUNCTIONS
  */
@@ -45,14 +54,7 @@ static inline bool lua_table_is_json_array(lua_State *L, int idx);
 void luadb_add_json_lib(lua_State *L) {
     assert(L);
 
-    static luaL_Reg json_lib[] = {
-            { "decode", luadb_json_decode },
-            { "encode", luadb_json_encode },
-            { "isarray", luadb_json_isarray },
-            { "makearray", luadb_json_makearray },
-    };
-
-    luaL_newlib(L, json_lib);
+    luaL_newlib(L, json_lib_funcs);
     lua_setglobal(L, "json");
 }
 
