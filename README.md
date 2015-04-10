@@ -102,40 +102,46 @@ that scripts are suggested against long-running transactions.
   built against.
 * `lmdb.Env` - LMDB `Env`(ironments) represent a single database file on
   the host file system. 
-    * `lmdb.Env.begin()`
-    * `lmdb.Env.close()` 
-    * `lmdb.Env.copy()`
-    * `lmdb.Env.info()`
-    * `lmdb.Env.flags()`
-    * `lmdb.Env.max_key_size()`
-    * `lmdb.Env.max_readers()`
-    * `lmdb.Env.readers()`
-    * `lmdb.Env.stat()`
-    * `lmdb.Env.sync([force])` - Flush data buffers to disk. 
+    * `lmdb.Env:begin()`
+    * `lmdb.Env:close()` - Close the environment out. Once this function
+      has been called, any additional calls to `Env` methods will produce
+      a Lua error.
+    * `lmdb.Env:copy()` 
+    * `lmdb.Env:info()` - Return some internal data about the environment.
+    * `lmdb.Env:flags()` - Return flags used to create the environment.
+    * `lmdb.Env:max_key_size()` - Return the maximum key size in bytes.
+    * `lmdb.Env:max_readers()` - Return the maximum number of readers.
+    * `lmdb.Env:path()` - Return the path used to open the environment.
+    * `lmdb.Env:readers()` - Return an array of strings describing active 
+      readers.
+    * `lmdb.Env:reader_check()` - Check for stale entries in the reader
+      lock table. Return the number of those entries.
+    * `lmdb.Env:stat()` - Return a table of statistics about the environment.
+    * `lmdb.Env:sync([force])` - Flush data buffers to disk. 
 * `lmdb.Transaction` - A single LMDB transaction.
-    * `lmdb.Transaction.commit()` - Commit any pending changes in the
+    * `lmdb.Transaction:commit()` - Commit any pending changes in the
       transaction.
-    * `lmdb.Transaction.cursor([...])` - Provide a new cursor to use on this
+    * `lmdb.Transaction:cursor([...])` - Provide a new cursor to use on this
       transaction. Callers can specify zero or more keys to use as a range
       prefix for the cursor.
-    * `lmdb.Transaction.delete(...)` - Delete the value located at the 
+    * `lmdb.Transaction:delete(...)` - Delete the value located at the 
       given key.
-    * `lmdb.Transaction.get(...)` - Get the value located at the given key.
-    * `lmdb.Transaction.put(val, ...)` - Put the given value at the given key.
-    * `lmdb.Transaction.rollback()` - Roll back any changes made in the 
+    * `lmdb.Transaction:get(...)` - Get the value located at the given key.
+    * `lmdb.Transaction:put(val, ...)` - Put the given value at the given key.
+    * `lmdb.Transaction:rollback()` - Roll back any changes made in the 
       transaction.
 * `lmdb.Cursor` - Cursor used to iterate over keys in a `Transaction`. Note
   that if a cursor is called with parameters, these keys will be used as a
   range prefix.
-    * `lmdb.Cursor.close()` - Close this cursor.
-    * `lmdb.Cursor.delete()` - Delete the current key/value pair.
-    * `lmdb.Cursor.first()` - Seek to the first key in the cursor.
-    * `lmdb.Cursor.item()` - Return a table with `key` and `value` elements.
-    * `lmdb.Cursor.key()` - Return the current key as an array.
-    * `lmdb.Cursor.last()` - Seek to the last key in the cursor.
-    * `lmdb.Cursor.next()` - Move the cursor forward one element.
-    * `lmdb.Cursor.prev()` - Move the cursor forward one element.
-    * `lmdb.Cursor.value()` - Return the current Lua value.
+    * `lmdb.Cursor:close()` - Close this cursor.
+    * `lmdb.Cursor:delete()` - Delete the current key/value pair.
+    * `lmdb.Cursor:first()` - Seek to the first key in the cursor.
+    * `lmdb.Cursor:item()` - Return a table with `key` and `value` elements.
+    * `lmdb.Cursor:key()` - Return the current key as an array.
+    * `lmdb.Cursor:last()` - Seek to the last key in the cursor.
+    * `lmdb.Cursor:next()` - Move the cursor forward one element.
+    * `lmdb.Cursor:prev()` - Move the cursor forward one element.
+    * `lmdb.Cursor:value()` - Return the current Lua value.
 
 ## License
 MIT License - see LICENSE file provided in the project root for more details
