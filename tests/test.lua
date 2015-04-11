@@ -21,6 +21,8 @@ function LuaTest.new(name)
   self.name = name
   self.cases = {}
   self.cur = nil
+  self.setup = function() --[[Empty function]] end
+  self.teardown = function() --[[Empty function]] end
 
   return self
 end
@@ -99,6 +101,24 @@ function LuaTest:add_case(name, func)
   }
 end
 
+-- Add setup code for each case
+function LuaTest:add_setup(func)
+  if type(func) ~= "function" then
+    error(string.format("test setup must be a function, not '%s'", type(func)))
+  end
+
+  self.setup = func
+end
+
+-- Add teardown code for each case
+function LuaTest:add_teardown(func)
+  if type(func) ~= "function" then
+    error(string.format("test teardown must be a function, not '%s'", type(func)))
+  end
+
+  self.teardown = func
+end
+
 -- Run all of the test cases defined on this suite
 function LuaTest:run()
   if self.cases == nil then
@@ -114,7 +134,9 @@ function LuaTest:run()
     end
 
     -- Generate test case result string
+    self.setup()
     local res, msg = pcall(case.runner)
+    self.teardown()
     if res then
       res = string.format("fails: %d, successes: %d", case.fails, case.successes)
     else
@@ -242,6 +264,11 @@ end
 
 -- Assert that a table contains the given key
 function LuaTest:assert_contains(t, key)
+  if t == nil then
+    self._fail("table is nil")
+    return
+  end
+
   if t[key] ~= nil then
     self:_success()
   else
