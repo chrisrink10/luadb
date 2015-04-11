@@ -240,5 +240,14 @@ function LuaTest:assert_table_equal(left, right)
   end
 end
 
+-- Assert that a table contains the given key
+function LuaTest:assert_contains(t, key)
+  if t[key] ~= nil then
+    self:_success()
+  else
+    self:_fail(string.format("table[%s] == nil", key))
+  end
+end
+
 -- Return the tester module
 return LuaTest
