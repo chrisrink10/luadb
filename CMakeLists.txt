@@ -48,7 +48,9 @@ check_include_files(sys/stat.h HAVE_SYS_STAT_H)
 check_include_files(sys/time.h HAVE_SYS_TIME_H)
 check_include_files(sys/types.h HAVE_SYS_TYPES_H)
 check_include_files(unistd.h HAVE_UNISTD_H)
+check_include_files(uuid/uuid.h HAVE_UUID_H)
 if(WIN32)
+    check_include_files(objbase.h HAVE_OBJBASE_H)
     check_include_files(windows.h HAVE_WINDOWS_H)
 endif(WIN32)
 
@@ -87,6 +89,9 @@ set(LUADB_C_FLAGS "-Werror -Wno-unused-function")
 if (HAVE_UNISTD_H)
     set(LUADB_C_FLAGS "${LUADB_C_FLAGS} -DLUADB_USE_GETOPT")
 endif(HAVE_UNISTD_H)
+if (HAVE_UUID_H)
+    set(LUADB_C_FLAGS "${LUADB_C_FLAGS} -DLUADB_USE_UUID")
+endif(HAVE_UUID_H)
 
 # LMDB Flags
 set(LUADB_LMDB_C_FLAGS "-pthread -O2 -g -Wno-unused-parameter -Wbad-function-cast -Wuninitialized")
@@ -111,7 +116,8 @@ set(SOURCE_FILES src/luadb.h
                  src/lmdb.c
                  src/main.c
                  src/state.c
-                 src/util.c)
+                 src/util.c
+                 src/uuid.c)
 
 ##############################
 # Create Libraries

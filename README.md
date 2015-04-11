@@ -30,6 +30,25 @@ Once you have installed MinGW, follow the steps below:
 * Type `mingw32-make`.
 * There may be a few warnings, but LuaDB should compile.
 
+## Configuration
+LuaDB environment configuration is specified via configuration files 
+written in - unsurprisingly - JSON format. For UNIX-like operating systems,
+that configuration file will be located at `/etc/luadb/luadb.json`. For
+Windows, it will be `%installdir%\luadb.json`. 
+
+The JSON format should be as one object, with each key representing an
+environment configuration and each value being another JSON object. Callers
+may specify a default configuration for the environment in one of two ways:
+
+ * Specifying a `"_default": "config_name"` key-value pair in the JSON
+   configuration.
+ * Specifying a `-c config_name` flag when starting the application.
+ 
+In all other cases, LuaDB will use its own default configuration, which is
+compiled into the binary (and thus the configuration file need not exist).
+Note that configurations *may not be hot swapped*. That is, the LuaDB 
+environment must be brought down to switch configurations.
+
 ## Lua APIs
 LuaDB provides a number of specialized Lua APIs for reading and responding
 to HTTP and JSON requests and accessing your application's persistent data.
@@ -142,6 +161,12 @@ that scripts are suggested against long-running transactions.
     * `lmdb.Cursor:next()` - Move the cursor forward one element.
     * `lmdb.Cursor:prev()` - Move the cursor forward one element.
     * `lmdb.Cursor:value()` - Return the current Lua value.
+
+### `uuid` module
+The `uuid` module provides an easy way to produce Universally Unique 
+Identifiers in your LuaDB environment.
+
+* `uuid.uuid()` - Generate a UUID string. Returns `nil` if there was an error.
 
 ## License
 MIT License - see LICENSE file provided in the project root for more details

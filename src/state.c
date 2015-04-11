@@ -20,6 +20,7 @@
 #include "json.h"
 #include "lmdb.h"
 #include "state.h"
+#include "uuid.h"
 
 #ifdef _WIN32
 static const char *const PATH_SEPARATOR = "\\";
@@ -46,6 +47,7 @@ lua_State *luadb_new_state() {
     luaL_openlibs(L);
     luadb_add_json_lib(L);
     luadb_add_lmdb_lib(L);
+    luadb_add_uuid_lib(L);
 
     return L;
 }
