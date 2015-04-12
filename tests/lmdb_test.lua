@@ -12,7 +12,7 @@ local LuaTest = require("test")
 local lt = LuaTest.new("lmdb")
 
 --[[ MODULE PRIVATE VARIABLES ]]--
-local testpath = "bin/Debug/test"
+local testpath = "/Users/christopher/ClionProjects/luadb/bin/Debug/test"
 local testdb = nil
 local testtx = nil
 local testcur = nil
@@ -33,6 +33,25 @@ local dbopts = {
 local maxkeysize = 511  -- Max key size (compile-time constant)
 
 --[[ ENVIRONMENT TESTS ]]--
+
+-- Test that we get a new Tx
+function test_env_begin_tx()
+  local tx = testdb:begin()
+
+  -- Verify that a transaction is created
+  lt:assert_not_equal(tx, nil)
+
+  -- Verify we get an entry in the ref table
+  local reg = debug.getregistry()
+  local uuid = testdb:_uuid()
+  lt:assert_contains(reg, uuid)
+  local t = reg[uuid]
+  lt:assert_not_equal(t, nil)
+  lt:assert_equal(type(t), "table")
+  lt:assert_contains(t, tx)
+
+  tx:close()
+end
 
 -- Test that we get a table back with environment flags
 function test_env_flags()
@@ -92,14 +111,32 @@ end
 
 -- Test that we get an array of readers
 function test_env_readers()
+  -- Create a coroutine which creates readers to populate the reader table
+  local thread = coroutine.create(function()
+    local tdb = lmdb.open(testpath)
+    coroutine.yield()
+    tdb:close()
+  end)
+
+  -- Should be no readers at first
   local readers = testdb:readers()
-  -- TODO: do something with this
+  lt:assert_equal(#readers, 0)
+
+  -- Start the other thread
+  coroutine.resume(thread)
+
+  -- Should be one reader now
+  readers = testdb:readers()
+  lt:assert_equal(#readers, 1)
+
+  -- Finish up the coroutine so it cleans itself up
+  coroutine.resume(thread)
 end
 
 -- Test that we get the number of "dead" readers
 function test_env_reader_check()
   local dead = testdb:reader_check()
-  -- TODO: do something with this
+  lt:assert_equal(type(dead), "number")
 end
 
 -- Test that we get a table back with environment statistics
@@ -119,6 +156,22 @@ function test_env_sync()
   -- TODO: do something with this
 end
 
+-- Test that we get a UUID
+function test_env__uuid()
+  local uuid = testdb:_uuid()
+  lt:assert_equal(type(uuid), "string")
+end
+
+-- Test that the environment reference table is created
+function test_env___ref_table()
+  local reg = debug.getregistry()
+  local uuid = testdb:_uuid()
+  lt:assert_contains(reg, uuid)
+
+  local t = reg[uuid]
+  lt:assert_not_equal(t, nil)
+  lt:assert_equals(type(t), "table")
+end
 
 --[[ ADD TEST CASES ]]--
 
@@ -136,6 +189,7 @@ end)
 -- Add test runners to the test suite
 
 lt:add_case("environment", function()
+  test_env_begin_tx()
   test_env_flags()
   test_env_info()
   test_env_max_key_size()
@@ -145,6 +199,7 @@ lt:add_case("environment", function()
   test_env_reader_check()
   test_env_stat()
   test_env_sync()
+  test_env__uuid()
 end)
 
 lt:add_case("txn", function()

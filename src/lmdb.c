@@ -26,7 +26,7 @@ static const unsigned int LMDB_DEFAULT_MAX_READERS = 126;
 static const size_t LMDB_DEFAULT_MAP_SIZE = 10485760;
 static const int LMDB_DEFAULT_MODE = 0644;          // -rw-r--r--
 static const int LMDB_DEFAULT_TXN_COUNT = 10;
-//static const int LMDB_DEFAULT_CURSOR_COUNT = 10;
+static const int LMDB_DEFAULT_CURSOR_COUNT = 10;
 
 /*
  * FORWARD DECLARATIONS
@@ -44,12 +44,19 @@ static int lmdb_env_readers(lua_State *L);
 static int lmdb_env_reader_check(lua_State *L);
 static int lmdb_env_stat(lua_State *L);
 static int lmdb_env_sync(lua_State *L);
+static int lmdb_env__uuid(lua_State *L);
+
+static int lmdb_tx_tostring(lua_State *L);
+static int lmdb_tx_close(lua_State *L);
 
 static MDB_env *open_mdb_env(const char *path, unsigned int flags, unsigned int max_readers, size_t map_size, int *err);
 static void get_mdb_env_flags(lua_State *L, unsigned int *flags, unsigned int *max_readers, size_t *map_size);
 static inline MDB_env *check_mdb_env(lua_State *L, int idx);
+static inline MDB_txn *check_mdb_txn(lua_State *L, int idx);
 static void clean_lmdb_env_reference_table(lua_State *L, char *uuid);
 static int make_lmdb_env_reader_table(const char *msg, lua_State *L);
+static void add_tx_to_reference_table(lua_State *L, MDB_env *env, MDB_txn *txn, int idx);
+static void remove_tx_from_reference_table(lua_State *L, MDB_env *env, MDB_txn *txn, int idx);
 static char *make_lmdb_env_reference_table(lua_State *L);
 static int make_lmdb_env_metatable(lua_State *L);
 
@@ -79,11 +86,15 @@ static luaL_Reg lmdb_env_methods[] = {
         { "reader_check", lmdb_env_reader_check },
         { "stat", lmdb_env_stat },
         { "sync", lmdb_env_sync },
+        { "_uuid", lmdb_env__uuid },
         { NULL, NULL },
 };
 
 // LMDB Transaction methods
 static luaL_Reg lmdb_tx_methods[] = {
+        { "__gc", lmdb_tx_close },
+        { "__tostring", lmdb_tx_tostring },
+        { "close", lmdb_tx_close },
         { NULL, NULL },
 };
 
@@ -216,7 +227,8 @@ static int lmdb_env_begin_tx(lua_State *L) {
     luaL_getmetatable(L, LMDB_TX_REGISTRY_NAME);
     lua_setmetatable(L, -2);
 
-    // TODO: enter this Tx into the environment's Tx table
+    // Add our weak Txn reference
+    add_tx_to_reference_table(L, env, txn, lua_gettop(L));
     return 1;
 }
 
@@ -454,9 +466,54 @@ static int lmdb_env_sync(lua_State *L) {
     return 1;
 }
 
+static int lmdb_env__uuid(lua_State *L) {
+    MDB_env *env = check_mdb_env(L, 1);
+
+    char *uuid = mdb_env_get_userctx(env);
+    if (!uuid) {
+        luaL_error(L, "no UUID found for this Environment");
+        return 0;
+    }
+
+    lua_pushstring(L, uuid);
+    return 1;
+}
+
 /*
  * PRIVATE LUADB TX CFUNCTIONS
  */
+
+static int lmdb_tx_tostring(lua_State *L) {
+    /*MDB_env *env = */check_mdb_txn(L, 1);
+    lua_pushstring(L, "lmdb.Tx()");
+    return 1;
+}
+
+static int lmdb_tx_close(lua_State *L) {
+    MDB_txn **loc = luaL_checkudata(L, 1, LMDB_TX_REGISTRY_NAME);
+    MDB_txn *txn = *loc;
+
+    if (!txn) {
+        luaL_error(L, "LMDB transaction not found");
+        return 0;
+    }
+
+    // Get the associated environment
+    MDB_env *env = mdb_txn_env(txn);
+    if (!env) {
+        mdb_txn_abort(txn);
+        *loc = NULL;
+        luaL_error(L, "LMDB transaction has no associated environment");
+        return 0;
+    }
+
+    // Clean this Txn reference from the table
+    remove_tx_from_reference_table(L, env, txn, lua_gettop(L));
+
+    mdb_txn_abort(txn);
+    *loc = NULL;
+    return 0;
+}
 
 /*
  * PRIVATE LUADB CURSOR CFUNCTIONS
@@ -572,6 +629,24 @@ static inline MDB_env *check_mdb_env(lua_State *L, int idx) {
     return *loc;
 }
 
+// Check for a MDB_txn as a function parameter and dererence it.
+//
+// This function issues a Lua error if the transaction variable isn't
+// found (i.e. is NULL), so it would technically be safe to avoid a
+// NULL check on the return value here.
+static inline MDB_txn *check_mdb_txn(lua_State *L, int idx) {
+    assert(L);
+
+    MDB_txn **loc = luaL_checkudata(L, idx, LMDB_TX_REGISTRY_NAME);
+
+    if (!(*loc)) {
+        luaL_error(L, "LMDB transaction not found");
+        return NULL;
+    }
+
+    return *loc;
+}
+
 // Clean up any lingering cursors and transactions before closing the
 // entire environment.
 static void clean_lmdb_env_reference_table(lua_State *L, char *uuid) {
@@ -681,6 +756,81 @@ static char *make_lmdb_env_reference_table(lua_State *L) {
     // Set the table into the registry at key `uuid`
     lua_settable(L, LUA_REGISTRYINDEX);
     return uuid;
+}
+
+// Add the given Transaction to the Weak Reference table for the
+// given environment. Use the idx to indicate where the Txn is on
+// the Lua stack.
+static void add_tx_to_reference_table(lua_State *L, MDB_env *env, MDB_txn *txn, int idx) {
+    assert(L);
+    assert(txn);
+
+    if (!env) {
+        env = mdb_txn_env(txn);
+    }
+
+    char *uuid = mdb_env_get_userctx(env);
+    if (!uuid) {
+        luaL_error(L, "no reference table found for environment");
+    }
+
+    // Check for enough stack space
+    luaL_checkstack(L, 5, "out of memory");
+
+    // Get the Env reference table from the registry
+    lua_pushstring(L, uuid);  // 1->2
+    lua_gettable(L, LUA_REGISTRYINDEX); // 2->2
+
+    // Push the userdata back onto the stack and get its table value
+    lua_pushvalue(L, idx); // 2->3
+    lua_pushvalue(L, idx); // 3->4
+    lua_gettable(L, -2); // 4->4
+
+    // If this value isn't already in the table, add it
+    int type = lua_type(L, -1);
+    switch (type) {
+        case LUA_TTABLE:
+            return;             // Table already exists
+        default:                // Fall through
+        case LUA_TNIL:
+            lua_pop(L, 1);      // Pop the nil/other off the stack
+        case LUA_TNONE:         // Fall through
+            break;
+    }
+
+    // Create the Txn reference table
+    lua_createtable(L, 0, LMDB_DEFAULT_CURSOR_COUNT);
+    lua_settable(L, -3);
+    lua_settop(L, idx);
+}
+
+// Remove the given Transaction from the Weak Reference table for
+// the given environment. Use the idx to indicate where the Txn userdata
+// is on the Lua stack.
+static void remove_tx_from_reference_table(lua_State *L, MDB_env *env, MDB_txn *txn, int idx) {
+    assert(L);
+    assert(txn);
+
+    if (!env) {
+        env = mdb_txn_env(txn);
+    }
+
+    char *uuid = mdb_env_get_userctx(env);
+    if (!uuid) {
+        luaL_error(L, "no reference table found for environment");
+    }
+
+    // Check for enough stack space
+    luaL_checkstack(L, 5, "out of memory");
+
+    // Get the Env reference table from the registry
+    lua_pushstring(L, uuid);
+    lua_gettable(L, LUA_REGISTRYINDEX);
+
+    // Push the userdata back onto the stack and set it nil
+    lua_pushvalue(L, idx);
+    lua_pushnil(L);
+    lua_settable(L, -3);
 }
 
 // Create the metatable for LMDB Environment objects.
