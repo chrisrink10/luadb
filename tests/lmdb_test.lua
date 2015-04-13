@@ -20,11 +20,12 @@ local dbopts = {
   fixedmap = false,     -- Use fixed mmap
   nosubdir = false,     -- Do not use subdirectory
   nosync = false,       -- Do not fsync after commit
-  rdonly = true,        -- Read only
+  rdonly = false,       -- Read only
   nometasync = false,   -- Do not fsync metapage after commit
   writemap = false,     -- Use writeable mmap
+  mapasync = false,     -- Use asynchronous msync with `writemap`
   notls = false,        -- Tie locktable slots to Tx
-  nolock = true,        -- Let callers handles
+  nolock = false,       -- Let callers handle locks
   nordahead = false,    -- Don't use readahead
   nomeminit = false,    -- Do not initialize malloc'ed memory
   maxreaders = 150,     -- Maximum simultaneous readers
@@ -170,7 +171,36 @@ function test_env___ref_table()
 
   local t = reg[uuid]
   lt:assert_not_equal(t, nil)
-  lt:assert_equals(type(t), "table")
+  lt:assert_equal(type(t), "table")
+end
+
+--[[ TRANSACTION TESTS ]]--
+
+-- Test that we can put values and get them back
+function test_tx_put()
+  local tx1 = testdb:begin()
+  local keys = { "Key", "Sub1", "Sub2" }
+  local vals = { "Val1", "Val2", "Val3" }
+
+  tx1:put(vals[1], keys[1])
+  tx1:put(vals[2], keys[1], keys[2])
+  tx1:put(vals[3], keys[1], keys[2], keys[3])
+  tx1:commit()
+  tx1 = nil
+
+  local tx2 = testdb:begin()
+  local rets = {
+    tx2:get(keys[1]),
+    tx2:get(keys[1], keys[2]),
+    tx2:get(keys[1], keys[2], keys[3])
+  }
+
+  lt:assert_equal(vals[1], rets[1])
+  lt:assert_equal(vals[2], rets[2])
+  lt:assert_equal(vals[3], rets[3])
+
+  tx2:close()
+  tx2 = nil
 end
 
 --[[ ADD TEST CASES ]]--
@@ -179,9 +209,11 @@ end
 
 lt:add_setup(function()
   testdb = lmdb.open(testpath, dbopts)
+  -- testtx = testdb:begin()
 end)
 
 lt:add_teardown(function()
+  -- pcall(testtx.close, testtx)
   testdb:close()
   testdb = nil
 end)
@@ -200,10 +232,11 @@ lt:add_case("environment", function()
   test_env_stat()
   test_env_sync()
   test_env__uuid()
+  test_env___ref_table()
 end)
 
 lt:add_case("txn", function()
-
+  test_tx_put()
 end)
 
 lt:add_case("cursor", function()

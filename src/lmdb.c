@@ -8,8 +8,9 @@
  * License: MIT (see LICENSE document at source tree root)
  *****************************************************************************/
 
-#include <stdlib.h>
 #include <assert.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "deps/lua/lua.h"
 #include "deps/lua/lauxlib.h"
@@ -27,6 +28,7 @@ static const size_t LMDB_DEFAULT_MAP_SIZE = 10485760;
 static const int LMDB_DEFAULT_MODE = 0644;          // -rw-r--r--
 static const int LMDB_DEFAULT_TXN_COUNT = 10;
 static const int LMDB_DEFAULT_CURSOR_COUNT = 10;
+static const char LMDB_KEY_SEP = 0x1F;
 
 /*
  * FORWARD DECLARATIONS
@@ -48,6 +50,10 @@ static int lmdb_env__uuid(lua_State *L);
 
 static int lmdb_tx_tostring(lua_State *L);
 static int lmdb_tx_close(lua_State *L);
+static int lmdb_tx_commit(lua_State *L);
+static int lmdb_tx_delete(lua_State *L);
+static int lmdb_tx_get(lua_State *L);
+static int lmdb_tx_put(lua_State *L);
 
 static MDB_env *open_mdb_env(const char *path, unsigned int flags, unsigned int max_readers, size_t map_size, int *err);
 static void get_mdb_env_flags(lua_State *L, unsigned int *flags, unsigned int *max_readers, size_t *map_size);
@@ -58,10 +64,11 @@ static int make_lmdb_env_reader_table(const char *msg, lua_State *L);
 static void add_tx_to_reference_table(lua_State *L, MDB_env *env, MDB_txn *txn, int idx);
 static void remove_tx_from_reference_table(lua_State *L, MDB_env *env, MDB_txn *txn, int idx);
 static char *make_lmdb_env_reference_table(lua_State *L);
+static int new_tx_dbi(lua_State *L, MDB_txn *txn, MDB_dbi *dbi, int idx);
+static MDB_dbi get_tx_dbi(lua_State *L, MDB_txn *txn, int idx);
+static char *get_lmdb_key(lua_State *L, size_t *len, int idx, int last);
 static int make_lmdb_env_metatable(lua_State *L);
-
 static int make_lmdb_tx_metatable(lua_State *L);
-
 static int make_lmdb_cursor_metatable(lua_State *L);
 
 // Library functions
@@ -95,6 +102,11 @@ static luaL_Reg lmdb_tx_methods[] = {
         { "__gc", lmdb_tx_close },
         { "__tostring", lmdb_tx_tostring },
         { "close", lmdb_tx_close },
+        { "commit", lmdb_tx_commit },
+        { "delete", lmdb_tx_delete },
+        { "get", lmdb_tx_get },
+        { "put", lmdb_tx_put },
+        { "rollback", lmdb_tx_close },
         { NULL, NULL },
 };
 
@@ -228,7 +240,19 @@ static int lmdb_env_begin_tx(lua_State *L) {
     lua_setmetatable(L, -2);
 
     // Add our weak Txn reference
-    add_tx_to_reference_table(L, env, txn, lua_gettop(L));
+    int idx = lua_gettop(L);
+    add_tx_to_reference_table(L, env, txn, idx);
+
+    // Get a DBI handle for the database
+    MDB_dbi dbi;
+    err = new_tx_dbi(L, txn, &dbi, idx);
+    if (err != 0) {
+        remove_tx_from_reference_table(L, NULL, txn, idx);
+        mdb_txn_abort(txn);
+        *loc = NULL;
+        luaL_error(L, "could not create a database handle");
+        return 0;
+    }
     return 1;
 }
 
@@ -515,6 +539,112 @@ static int lmdb_tx_close(lua_State *L) {
     return 0;
 }
 
+static int lmdb_tx_commit(lua_State *L) {
+    MDB_txn **loc = luaL_checkudata(L, 1, LMDB_TX_REGISTRY_NAME);
+    MDB_txn *txn = *loc;
+
+    if (!txn) {
+        luaL_error(L, "LMDB transaction not found");
+        return 0;
+    }
+
+    // Get the associated environment
+    MDB_env *env = mdb_txn_env(txn);
+    if (!env) {
+        mdb_txn_abort(txn);
+        *loc = NULL;
+        luaL_error(L, "LMDB transaction has no associated environment");
+        return 0;
+    }
+
+    // Clean this Txn reference from the table
+    remove_tx_from_reference_table(L, env, txn, lua_gettop(L));
+
+    int err = mdb_txn_commit(txn);
+    if (err != 0) {
+        luaL_error(L, "%s", mdb_strerror(err));
+        return 0;
+    }
+    *loc = NULL;
+    return 1;
+}
+
+static int lmdb_tx_delete(lua_State *L) {
+    MDB_txn *txn = check_mdb_txn(L, 1);
+    MDB_dbi dbi = get_tx_dbi(L, txn, 1);
+    MDB_val key;
+
+    // Create a LMDB key from multiple input parameters
+    char *tkey = get_lmdb_key(L, &key.mv_size, 1, lua_gettop(L));
+
+    // Delete the value in the database
+    int err = mdb_del(txn, dbi, &key, NULL);
+    free(tkey);
+    if (err == MDB_NOTFOUND) {
+        lua_pushboolean(L, 0);
+        return 1;
+    } else if (err != 0) {
+        luaL_error(L, "%s", mdb_strerror(err));
+        return 0;
+    }
+
+    // Push a true to indicate the value was deleted
+    lua_pushboolean(L, 1);
+    return 0;
+}
+
+static int lmdb_tx_get(lua_State *L) {
+    MDB_txn *txn = check_mdb_txn(L, 1);
+    MDB_dbi dbi = get_tx_dbi(L, txn, 1);
+    MDB_val key;
+    MDB_val val;
+
+    // Create a LMDB key from multiple input parameters
+    char *tkey = get_lmdb_key(L, &key.mv_size, 1, lua_gettop(L));
+    key.mv_data = tkey;
+
+    // Get the value in the database
+    int err = mdb_get(txn, dbi, &key, &val);
+    free(tkey);
+    if (err == MDB_NOTFOUND) {
+        lua_pushnil(L);
+        return 1;
+    } else if (err != 0) {
+        luaL_error(L, "%s", mdb_strerror(err));
+        return 0;
+    }
+
+    // Push its string value onto the stack
+    const char *vstr = val.mv_data;
+    lua_pushlstring(L, vstr, val.mv_size);
+    return 1;
+}
+
+static int lmdb_tx_put(lua_State *L) {
+    MDB_txn *txn = check_mdb_txn(L, 1);
+    MDB_dbi dbi = get_tx_dbi(L, txn, 1);
+    MDB_val key;
+    MDB_val val;
+    unsigned int flags = 0;
+
+    // Get the data and size for the value
+    const char *tval = luaL_tolstring(L, 2, &val.mv_size);
+    val.mv_data = (void*)tval;
+
+    // Create a LMDB key from multiple input parameters
+    char *tkey = get_lmdb_key(L, &key.mv_size, 2, lua_gettop(L) - 1);
+    key.mv_data = tkey;
+
+    // Put the values into the database
+    int err = mdb_put(txn, dbi, &key, &val, flags);
+    free(tkey);
+    if (err != 0) {
+        luaL_error(L, "%s", mdb_strerror(err));
+        return 0;
+    }
+    return 0;
+}
+
 /*
  * PRIVATE LUADB CURSOR CFUNCTIONS
  */
@@ -590,7 +720,7 @@ static void get_mdb_env_flags(lua_State *L, unsigned int *flags, unsigned int *m
         // Convert to boolean and add the flag if true
         val = lua_toboolean(L, -1);
         if (val) {
-            flags += flag->val;
+            *flags = *flags | flag->val;
         }
         lua_pop(L, 1);
     }
@@ -682,6 +812,14 @@ static void clean_lmdb_env_reference_table(lua_State *L, char *uuid) {
         int cursoridx = lua_gettop(L);
         lua_pushnil(L);
         while(lua_next(L, cursoridx) != 0) {
+            int ktype = lua_type(L, -2);     // Key
+
+            // Skip the string-keyed items, since they are just metadata
+            if (ktype == LUA_TSTRING) {
+                lua_pop(L, 1);
+                continue;
+            }   
+
             MDB_cursor **cloc = luaL_checkudata(L, -1, LMDB_CURSOR_REGISTRY_NAME);
             MDB_cursor *cursor = *cloc;
 
@@ -831,6 +969,126 @@ static void remove_tx_from_reference_table(lua_State *L, MDB_env *env, MDB_txn *
     lua_pushvalue(L, idx);
     lua_pushnil(L);
     lua_settable(L, -3);
+}
+
+// Generate a new MDB dbi handle for the Txn and attach it to the
+// reference table in the environment for later reference. Will
+// return 0 if the DBI is created successfully. Otherwise, returns
+// the MDB error code.
+static int new_tx_dbi(lua_State *L, MDB_txn *txn, MDB_dbi *dbi, int idx) {
+    assert(L);
+    assert(txn);
+
+    int err = mdb_dbi_open(txn, NULL, 0, dbi);
+    if (err != 0) {
+        return err;
+    }
+
+    MDB_env *env = mdb_txn_env(txn);
+    if (!env) {
+        luaL_error(L, "transaction has no associated environment");
+        return 0;
+    }
+
+    char *uuid = mdb_env_get_userctx(env);
+    if (!uuid) {
+        luaL_error(L, "environment has no associated UUID");
+        return 0;
+    }
+
+    luaL_checkstack(L, 4, "out of memory");
+
+    // Get the environment reference table
+    lua_pushstring(L, uuid);
+    lua_gettable(L, LUA_REGISTRYINDEX);
+
+    // Get the transaction table
+    lua_pushvalue(L, idx);
+    lua_gettable(L, -2);
+
+    // Add a "dbi" field to that table
+    lua_pushstring(L, "dbi");
+    lua_pushnumber(L, *dbi);
+    lua_settable(L, -3);
+
+    // Pop all of the tables off the stack
+    lua_settop(L, idx);
+    return 0;
+}
+
+// Get the MDB dbi handle for the Txn stored in the weak reference table.
+static MDB_dbi get_tx_dbi(lua_State *L, MDB_txn *txn, int idx) {
+    assert(L);
+    assert(txn);
+
+    MDB_env *env = mdb_txn_env(txn);
+    if (!env) {
+        luaL_error(L, "transaction has no associated environment");
+        return 0;
+    }
+
+    char *uuid = mdb_env_get_userctx(env);
+    if (!uuid) {
+        luaL_error(L, "environment has no associated UUID");
+        return 0;
+    }
+
+    luaL_checkstack(L, 3, "out of memory");
+
+    // Get the environment reference table
+    lua_pushstring(L, uuid);
+    lua_gettable(L, LUA_REGISTRYINDEX);
+
+    // Get the transaction table
+    lua_pushvalue(L, idx);
+    lua_gettable(L, -2);
+
+    // Get the "dbi" field from that table
+    int type = lua_getfield(L, -1, "dbi");
+    if (type != LUA_TNUMBER) {
+        luaL_error(L, "no database handle found for current transaction");
+        return 0;
+    }
+
+    MDB_dbi dbi = (MDB_dbi)lua_tonumber(L, -1);
+    lua_pop(L, 3);      // Pop off the last three elements
+    return dbi;
+}
+
+// Concatenate all of the variadic Lua parameters into a single key and
+// return that (and length). Note that all parameters between `idx` and
+// `last` will be considered as string keys.
+static char *get_lmdb_key(lua_State *L, size_t *len, int idx, int last) {
+    assert(L);
+    char *tkey = NULL;
+    *len = 0;
+
+    // Compute key length
+    for (int i = idx+1; i <= last; i++) {
+        lua_len(L, i);      // Get the length of the item
+        *len += (int)lua_tonumber(L, -1) + 1;
+        lua_pop(L, 1);      // Pop the length from the stack
+    }
+
+    // Allocate memory for the new key
+    tkey = malloc(*len);
+    if (!tkey) {
+        luaL_error(L, "could not allocate memory for key");
+        return NULL;
+    }
+
+    // Generate the new key
+    int keyidx = 0;
+    for (int i = idx+1; i <= last; i++) {
+        size_t tlen;
+        const char *kstr = luaL_tolstring(L, i, &tlen);
+        memcpy(&tkey[keyidx], kstr, tlen);
+        tkey[keyidx+tlen] = LMDB_KEY_SEP;
+        keyidx += tlen + 1;
+    }
+
+    tkey[keyidx - 1] = '\0'; // Append a NUL
+    return tkey;
 }
 
 // Create the metatable for LMDB Environment objects.
