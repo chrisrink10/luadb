@@ -40,6 +40,12 @@ typedef struct luadb_lmdb_tx {
     MDB_dbi dbi;
 } luadb_lmdb_tx;
 
+// LMDB Cursor type
+typedef struct luadb_lmdb_cursor {
+    MDB_cursor *cur;
+    char *prefix;
+} luadb_lmdb_cursor;
+
 static int lmdb_env_tostring(lua_State *L);
 static int lmdb_env_begin_tx(lua_State *L);
 static int lmdb_env_close(lua_State *L);
@@ -135,12 +141,13 @@ static luadb_env_flag lmdb_env_opts[] = {
         { "rdonly", MDB_RDONLY },
         { "nometasync", MDB_NOMETASYNC },
         { "writemap", MDB_WRITEMAP },
+        { "mapasync", MDB_MAPASYNC },
         { "notls", MDB_NOTLS },
         { "nolock", MDB_NOLOCK },
         { "nordahead", MDB_NORDAHEAD },
         { "nomeminit", MDB_NOMEMINIT },
+        { NULL },
 };
-static const int LMDB_NUM_FLAGS = 10;
 
 /*
  * PUBLIC FUNCTIONS
@@ -317,49 +324,11 @@ static int lmdb_env_flags(lua_State *L) {
     luaL_checkstack(L, 3, "out of memory");
     lua_newtable(L);
 
-    lua_pushstring(L, "fixedmap");
-    lua_pushboolean(L, flags & MDB_FIXEDMAP);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "nosubdir");
-    lua_pushboolean(L, flags & MDB_NOSUBDIR);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "nosync");
-    lua_pushboolean(L, flags & MDB_NOSYNC);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "rdonly");
-    lua_pushboolean(L, flags & MDB_RDONLY);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "nometasync");
-    lua_pushboolean(L, flags & MDB_NOMETASYNC);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "writemap");
-    lua_pushboolean(L, flags & MDB_WRITEMAP);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "mapasync");
-    lua_pushboolean(L, flags & MDB_MAPASYNC);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "notls");
-    lua_pushboolean(L, flags & MDB_NOTLS);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "nolock");
-    lua_pushboolean(L, flags & MDB_NOLOCK);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "nordahead");
-    lua_pushboolean(L, flags & MDB_NORDAHEAD);
-    lua_settable(L, -3);
-
-    lua_pushstring(L, "nomeminit");
-    lua_pushboolean(L, flags & MDB_NOMEMINIT);
-    lua_settable(L, -3);
+    for (luadb_env_flag *f = &lmdb_env_opts[0]; f->name != NULL; f++) {
+        lua_pushstring(L, f->name);
+        lua_pushboolean(L, flags & f->val);
+        lua_settable(L, -3);
+    }
 
     return 1;
 }
@@ -732,11 +701,9 @@ static void get_mdb_env_flags(lua_State *L, unsigned int *flags, unsigned int *m
 
     // Add up the flag values
     int ftype, val;
-    for (int i = 0; i < LMDB_NUM_FLAGS; i++) {
-        luadb_env_flag *flag = &lmdb_env_opts[i];
-
+    for (luadb_env_flag *f = &lmdb_env_opts[0]; f->name != NULL; f++) {
         // Try to get the field with flag name
-        lua_pushstring(L, flag->name);
+        lua_pushstring(L, f->name);
         ftype = lua_gettable(L, -2);
 
         // If it wasn't given, just skip it (all options are optional)
@@ -747,7 +714,7 @@ static void get_mdb_env_flags(lua_State *L, unsigned int *flags, unsigned int *m
         // Convert to boolean and add the flag if true
         val = lua_toboolean(L, -1);
         if (val) {
-            *flags = *flags | flag->val;
+            *flags = *flags | f->val;
         }
         lua_pop(L, 1);
     }
