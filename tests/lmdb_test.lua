@@ -176,7 +176,35 @@ end
 
 --[[ TRANSACTION TESTS ]]--
 
--- Test that we can put values and get them back
+-- Test that we can delete values and get them back
+function test_tx_delete()
+  local tx1 = testdb:begin()
+  local keys = { "Key", "Sub1", "Sub2" }
+  local vals = { "Val1", "Val2", "Val3" }
+
+  tx1:put(vals[1], keys[1])
+  tx1:put(vals[2], keys[1], keys[2])
+  tx1:put(vals[3], keys[1], keys[2], keys[3])
+  tx1:commit()
+  tx1 = nil
+
+  local tx2 = testdb:begin()
+  local rets = {
+    tx2:delete(keys[1]),
+    tx2:delete(keys[1], keys[2]),
+    tx2:delete(keys[1], keys[2], keys[3]),
+    tx2:delete(keys[2], keys[1], keys[3])
+  }
+
+  lt:assert_equal(true, rets[1])
+  lt:assert_equal(true, rets[2])
+  lt:assert_equal(true, rets[3])
+  lt:assert_equal(false, rets[4])
+
+  tx2:close()
+  tx2 = nil
+end
+
 function test_tx_put()
   local tx1 = testdb:begin()
   local keys = { "Key", "Sub1", "Sub2" }
@@ -236,6 +264,7 @@ lt:add_case("environment", function()
 end)
 
 lt:add_case("txn", function()
+  test_tx_delete()
   test_tx_put()
 end)
 

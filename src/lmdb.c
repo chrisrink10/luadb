@@ -576,6 +576,7 @@ static int lmdb_tx_delete(lua_State *L) {
 
     // Create a LMDB key from multiple input parameters
     char *tkey = get_lmdb_key(L, &key.mv_size, 1, lua_gettop(L));
+    key.mv_data = tkey;
 
     // Delete the value in the database
     int err = mdb_del(txn, dbi, &key, NULL);
@@ -590,7 +591,7 @@ static int lmdb_tx_delete(lua_State *L) {
 
     // Push a true to indicate the value was deleted
     lua_pushboolean(L, 1);
-    return 0;
+    return 1;
 }
 
 static int lmdb_tx_get(lua_State *L) {
@@ -818,7 +819,7 @@ static void clean_lmdb_env_reference_table(lua_State *L, char *uuid) {
             if (ktype == LUA_TSTRING) {
                 lua_pop(L, 1);
                 continue;
-            }   
+            }
 
             MDB_cursor **cloc = luaL_checkudata(L, -1, LMDB_CURSOR_REGISTRY_NAME);
             MDB_cursor *cursor = *cloc;
