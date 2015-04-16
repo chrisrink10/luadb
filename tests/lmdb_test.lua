@@ -249,12 +249,14 @@ end
 -- Test that we can put values into the database correctly
 function test_tx_put()
   local tx1 = testdb:begin()
-  local keys = { "Key", "Sub1", "Sub2" }
-  local vals = { "Val1", "Val2", "Val3" }
+  local keys = { "Key", "Sub1", 448.2, 10, true }
+  local vals = { "Val1", "Val2", "Val3", "w/ Numbers", "w/ Bool" }
 
   tx1:put(vals[1], keys[1])
   tx1:put(vals[2], keys[1], keys[2])
   tx1:put(vals[3], keys[1], keys[2], keys[3])
+  tx1:put(vals[4], keys[3], keys[4], keys[1])
+  tx1:put(vals[5], keys[4], keys[2], keys[5])
   tx1:commit()
   tx1 = nil
 
@@ -262,12 +264,14 @@ function test_tx_put()
   local rets = {
     tx2:get(keys[1]),
     tx2:get(keys[1], keys[2]),
-    tx2:get(keys[1], keys[2], keys[3])
+    tx2:get(keys[1], keys[2], keys[3]),
+    tx2:get(keys[3], keys[4], keys[1]),
+    tx2:get(keys[4], keys[2], keys[5]),
   }
 
-  lt:assert_equal(vals[1], rets[1])
-  lt:assert_equal(vals[2], rets[2])
-  lt:assert_equal(vals[3], rets[3])
+  for i, ret in ipairs(rets) do
+    lt:assert_equal(vals[i], ret)
+  end
 
   tx2:close()
   tx2 = nil

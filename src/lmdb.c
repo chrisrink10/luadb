@@ -9,6 +9,7 @@
  *****************************************************************************/
 
 #include <assert.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -19,16 +20,21 @@
 #include "lmdb.h"
 #include "uuid.h"
 
-static const char *const LMDB_ENV_REGISTRY_NAME = "lmdb.env";
-static const char *const LMDB_TX_REGISTRY_NAME = "lmdb.tx";
-static const char *const LMDB_CURSOR_REGISTRY_NAME = "lmdb.cursor";
+static const char *const LMDB_ENV_REGISTRY_NAME = "lmdb.Env";
+static const char *const LMDB_TX_REGISTRY_NAME = "lmdb.Tx";
+static const char *const LMDB_CURSOR_REGISTRY_NAME = "lmdb.Cursor";
 static const unsigned int LMDB_DEFAULT_FLAGS = 0;
 static const unsigned int LMDB_DEFAULT_MAX_READERS = 126;
 static const size_t LMDB_DEFAULT_MAP_SIZE = 10485760;
 static const int LMDB_DEFAULT_MODE = 0644;          // -rw-r--r--
 static const int LMDB_DEFAULT_TXN_COUNT = 10;
 static const int LMDB_DEFAULT_CURSOR_COUNT = 10;
-static const char LMDB_KEY_SEP = 0x1F;
+static const char LMDB_BOOLEAN_TYPE = 'b';
+static const char LMDB_INTEGER_TYPE = 'i';
+static const char LMDB_NUMERIC_TYPE = 'n';
+static const char LMDB_STRING_TYPE = 's';
+static const int LMDB_MAX_KEY_SEGMENTS = 32;
+static const int LMDB_MAX_KEY_SEG_LENGTH = UCHAR_MAX;
 
 /*
  * FORWARD DECLARATIONS
@@ -79,6 +85,7 @@ static void add_tx_to_reference_table(lua_State *L, MDB_env *env, MDB_txn *txn, 
 static void remove_tx_from_reference_table(lua_State *L, MDB_env *env, MDB_txn *txn, int idx);
 static char *make_lmdb_env_reference_table(lua_State *L);
 static char *get_lmdb_key(lua_State *L, size_t *len, int idx, int last);
+static char *generate_luadb_key(int *err, size_t *len, const char **keys, size_t *lens, char *types, int elems);
 static int make_lmdb_env_metatable(lua_State *L);
 static int make_lmdb_tx_metatable(lua_State *L);
 static int make_lmdb_cursor_metatable(lua_State *L);
@@ -566,7 +573,7 @@ static int lmdb_tx_delete(lua_State *L) {
     MDB_val key;
 
     // Create a LMDB key from multiple input parameters
-    char *tkey = get_lmdb_key(L, &key.mv_size, 1, lua_gettop(L));
+    char *tkey = get_lmdb_key(L, &key.mv_size, 2, lua_gettop(L));
     key.mv_data = tkey;
 
     // Delete the value in the database
@@ -591,7 +598,7 @@ static int lmdb_tx_get(lua_State *L) {
     MDB_val val;
 
     // Create a LMDB key from multiple input parameters
-    char *tkey = get_lmdb_key(L, &key.mv_size, 1, lua_gettop(L));
+    char *tkey = get_lmdb_key(L, &key.mv_size, 2, lua_gettop(L));
     key.mv_data = tkey;
 
     // Get the value in the database
@@ -618,11 +625,11 @@ static int lmdb_tx_put(lua_State *L) {
     unsigned int flags = 0;
 
     // Get the data and size for the value
-    const char *tval = luaL_tolstring(L, 2, &val.mv_size);
+    const char *tval = lua_tolstring(L, 2, &val.mv_size);
     val.mv_data = (void*)tval;
 
     // Create a LMDB key from multiple input parameters
-    char *tkey = get_lmdb_key(L, &key.mv_size, 2, lua_gettop(L) - 1);
+    char *tkey = get_lmdb_key(L, &key.mv_size, 3, lua_gettop(L));
     key.mv_data = tkey;
 
     // Put the values into the database
@@ -962,34 +969,95 @@ static void remove_tx_from_reference_table(lua_State *L, MDB_env *env, MDB_txn *
 // `last` will be considered as string keys.
 static char *get_lmdb_key(lua_State *L, size_t *len, int idx, int last) {
     assert(L);
-    char *tkey = NULL;
+    int elems = last - idx + 1;
+    const char *keys[elems];
+    size_t lens[elems];
+    char types[elems];
     *len = 0;
 
-    // Compute key length
-    for (int i = idx+1; i <= last; i++) {
-        lua_len(L, i);      // Get the length of the item
-        *len += (int)lua_tonumber(L, -1) + 1;
-        lua_pop(L, 1);      // Pop the length from the stack
-    }
-
-    // Allocate memory for the new key
-    tkey = malloc(*len);
-    if (!tkey) {
-        luaL_error(L, "could not allocate memory for key");
+    // Check that we don't have too many key segments
+    if (elems > LMDB_MAX_KEY_SEGMENTS) {
+        luaL_error(L, "max number of key segments is %d", LMDB_MAX_KEY_SEGMENTS);
         return NULL;
     }
 
-    // Generate the new key
-    int keyidx = 0;
-    for (int i = idx+1; i <= last; i++) {
-        size_t tlen;
-        const char *kstr = luaL_tolstring(L, i, &tlen);
-        memcpy(&tkey[keyidx], kstr, tlen);
-        tkey[keyidx+tlen] = LMDB_KEY_SEP;
-        keyidx += tlen + 1;
+    // Compute string lengths and cache the strings
+    for (int i = 0; i < elems; i++) {
+        int type = lua_type(L, i+idx);
+        switch(type) {
+            case LUA_TNUMBER:
+                keys[i] = lua_tolstring(L, i+idx, &lens[i]);
+                types[i] = (lua_isinteger(L, i+idx)) ? LMDB_INTEGER_TYPE : LMDB_NUMERIC_TYPE;
+                break;
+            case LUA_TSTRING:
+                keys[i] = lua_tolstring(L, i+idx, &lens[i]);
+                types[i] = LMDB_STRING_TYPE;
+                break;
+            case LUA_TBOOLEAN:
+                keys[i] = (lua_toboolean(L, i+idx)) ? "1" : "0";
+                lens[i] = 1;
+                types[i] = LMDB_BOOLEAN_TYPE;
+                break;
+            default:
+                luaL_error(L, "type '%s' not permitted in keys", lua_typename(L, type));
+                return NULL;
+        }
+
+        if (lens[i] > LMDB_MAX_KEY_SEG_LENGTH) {
+            luaL_error(L, "length of individual key piece exceeds %d %d %s", LMDB_MAX_KEY_SEG_LENGTH);
+            return NULL;
+        }
+
+        *len += lens[i];
     }
 
-    tkey[keyidx - 1] = '\0'; // Append a NUL
+    int err;
+    char *tkey = generate_luadb_key(&err, len, keys, lens, types, elems);
+    if (err) {
+        luaL_error(L, "could not allocate memory for key");
+        return NULL;
+    }
+    return tkey;
+}
+
+// Create an LuaDB key given a series of character arrays of given sizes.
+//
+// The array is a character array of this form:
+// key = {
+//     [0] = length, `k`, as unsigned char,
+//
+//     /* The keys segments are all back-to-back with inline lengths */
+//     {
+//         [0] = length, `n`, as unsigned char,
+//         [1] = type as unsigned char,
+//         [2-n] = value
+//     },
+//     { ... },
+//     { ... }
+// }
+static char *generate_luadb_key(int *err, size_t *len, const char **keys, size_t *lens, char *types, int elems) {
+    char *tkey = NULL;
+    *err = 0;
+
+    // Allocate memory for the new key
+    tkey = malloc(*len + (elems * 2) + 1);
+    if (!tkey) {
+        *err = 1;
+        return NULL;
+    }
+
+    // Enter the length in number of segments
+    tkey[0] = (unsigned char)elems;
+
+    // Generate the new key
+    int keyidx = 1;
+    for (int i = 0; i < elems; i++) {
+        tkey[keyidx] = (unsigned char)lens[i];
+        tkey[keyidx+1] = (unsigned char)types[i];
+        memcpy(&tkey[keyidx+2], keys[i], lens[i]);
+        keyidx += lens[i] + 2;
+    }
+
     return tkey;
 }
 
