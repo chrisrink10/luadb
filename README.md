@@ -121,7 +121,7 @@ that scripts are suggested against long-running transactions.
   built against.
 * `lmdb.Env` - LMDB `Env`(ironments) represent a single database file on
   the host file system.
-    * `lmdb.Env:begin()` - Begin a transaction.
+    * `lmdb.Env:begin([readonly])` - Begin a transaction.
     * `lmdb.Env:close()` - Close the environment out. Once this function
       has been called, any additional calls to `Env` methods will produce
       a Lua error.
@@ -150,6 +150,8 @@ that scripts are suggested against long-running transactions.
       given key.
     * `lmdb.Transaction:get(...)` - Get the value located at the given key.
     * `lmdb.Transaction:put(val, ...)` - Put the given value at the given key.
+    * `lmdb.Transaction:order(...)` - Order on keys with the given node or
+      nodes as a prefix. Returns the immediate next node value.
     * `lmdb.Transaction:rollback()` - Roll back any changes made in the
       transaction.
 * `lmdb.Cursor` - Cursor used to iterate over keys in a `Transaction`. Note

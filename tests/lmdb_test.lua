@@ -277,6 +277,35 @@ function test_tx_put()
   tx2 = nil
 end
 
+-- Test that we can iterate on key nodes
+function test_tx_order()
+  local tx1 = testdb:begin()
+  local id = 1
+  tx1:put("crink",                  "user", id, "username")
+  tx1:put("fakepass",               "user", id, "pass")
+  tx1:put("2",                      "user", id, "email")
+  tx1:put("chrisrink10@gmail.com",  "user", id, "email", 1)
+  tx1:put("crink@fake.com",         "user", id, "email", 2)
+  tx1:commit()
+  tx1 = nil
+
+  local tx2 = testdb:begin()
+  local user = {
+    username = "crink",
+    pass = "fakepass",
+    email = "2",
+  }
+  local nodes = {}
+
+  for node in tx2:order("user", id) do
+    nodes[node] = tx2:get("user", id, node)
+  end
+
+  lt:assert_table_equal(user, nodes)
+  tx2:close()
+  tx2 = nil
+end
+
 -- Test that values are not entered into the database if rolled back
 function test_tx_rollback()
   local tx1 = testdb:begin()
@@ -341,6 +370,7 @@ lt:add_case("txn", function()
   test_tx_delete()
   test_tx_get()
   test_tx_put()
+  test_tx_order()
   test_tx_rollback()
 end)
 
