@@ -29,12 +29,17 @@ static const size_t LMDB_DEFAULT_MAP_SIZE = 10485760;
 static const int LMDB_DEFAULT_MODE = 0644;          // -rw-r--r--
 static const int LMDB_DEFAULT_TXN_COUNT = 10;
 static const int LMDB_DEFAULT_CURSOR_COUNT = 10;
-static const char LMDB_BOOLEAN_TYPE = 'b';
-static const char LMDB_INTEGER_TYPE = 'i';
-static const char LMDB_NUMERIC_TYPE = 'n';
-static const char LMDB_STRING_TYPE = 's';
 static const int LMDB_MAX_KEY_SEGMENTS = 32;
 static const int LMDB_MAX_KEY_SEG_LENGTH = UCHAR_MAX;
+
+#define LMDB_BOOLEAN_CHAR 'b'
+#define LMDB_INTEGER_CHAR 'i'
+#define LMDB_NUMERIC_CHAR 'n'
+#define LMDB_STRING_CHAR 's'
+static const char LMDB_BOOLEAN_TYPE = LMDB_BOOLEAN_CHAR;
+static const char LMDB_INTEGER_TYPE = LMDB_INTEGER_CHAR;
+static const char LMDB_NUMERIC_TYPE = LMDB_NUMERIC_CHAR;
+static const char LMDB_STRING_TYPE = LMDB_STRING_CHAR;
 
 /*
  * FORWARD DECLARATIONS
@@ -1169,22 +1174,22 @@ static const char *next_luadb_key_segment(const char *key, size_t keylen, size_t
 static int push_type(lua_State *L, const char *val, size_t len, int type) {
     // Determine which data type to push back onto the stack
     switch(type) {
-        case LMDB_STRING_TYPE:
+        case LMDB_STRING_CHAR:
             lua_pushlstring(L, val, len);
             return 1;
-        case LMDB_NUMERIC_TYPE: {
+        case LMDB_NUMERIC_CHAR: {
             lua_Number f;
             sscanf(val, "%lf", &f);
             lua_pushnumber(L, f);
             return 1;
         }
-        case LMDB_INTEGER_TYPE: {
+        case LMDB_INTEGER_CHAR: {
             lua_Integer i;
             sscanf(val, "%lld", &i);
             lua_pushinteger(L, i);
             return 1;
         }
-        case LMDB_BOOLEAN_TYPE: {
+        case LMDB_BOOLEAN_CHAR: {
             int b;
             sscanf(val, "%d", &b);
             lua_pushboolean(L, b);

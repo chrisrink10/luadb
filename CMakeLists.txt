@@ -80,6 +80,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wno-format-extra-args")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g")
 
 # FastCGI flags
+set(LUADB_FCGI_C_FLAGS "-D_XOPEN_SOURCE -D__USE_MISC")
 set(LUADB_FCGI_C_FLAGS "-Wno-pointer-sign -Wno-unused-function -Wno-unused-const-variable")
 configure_file(${PROJECT_SOURCE_DIR}/src/deps/fcgi/fcgi_config.h.in
                ${PROJECT_SOURCE_DIR}/src/deps/fcgi/fcgi_config.h)

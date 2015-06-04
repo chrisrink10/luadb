@@ -318,7 +318,7 @@ int OS_CreateLocalIpcFd(const char *bindPath, int backlog)
 	    fprintf(stderr, "you must choose one explicitly!!!\n");
 	    exit(1);
 	  }
-	  tcp_ia = ((struct in_addr *) (hep->h_addr))->s_addr;
+	  tcp_ia = ((struct in_addr *) (hep->h_addr_list[0]))->s_addr;
 	}
       }
     }
@@ -411,7 +411,7 @@ int OS_FcgiConnect(char *bindPath)
 	    exit(1000);
 	}
 	sa.inetVariant.sin_family = AF_INET;
-	memcpy(&sa.inetVariant.sin_addr, hp->h_addr, hp->h_length);
+	memcpy(&sa.inetVariant.sin_addr, hp->h_addr_list[0], hp->h_length);
 	sa.inetVariant.sin_port = htons(port);
 	servLen = sizeof(sa.inetVariant);
 	resultSock = socket(AF_INET, SOCK_STREAM, 0);
