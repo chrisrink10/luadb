@@ -77,6 +77,9 @@ set(LUADB_CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUA_USE_APICHECK")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99") #-O2 -DNDEBUG
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wno-format-extra-args")
+if (NOT WIN32)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -lm -pthread")
+endif(NOT WIN32)
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g")
 
 # FastCGI flags
