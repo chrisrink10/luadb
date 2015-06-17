@@ -11,9 +11,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
-#include <string.h>
+
 #ifdef LUADB_USE_GETOPT
-#include <unistd.h>
+#include <getopt.h>
 #endif
 #ifdef LUADB_USE_READLINE
 #include <readline/readline.h>
@@ -23,6 +23,7 @@
 #include "deps/lua/lua.h"
 #include "deps/lua/lauxlib.h"
 
+#include "fcgi.h"
 #include "luadb.h"
 #include "state.h"
 
@@ -51,7 +52,7 @@ static const int REPL_BUFFER_SIZE = 512;
 
 // Print the short usage line
 static void print_usage(FILE *dest, const char *cmd) {
-    fprintf(dest, "usage: %s [-h] [-n hostname:port] [file]\n", cmd);
+    fprintf(dest, "usage: %s [-h] [-f] [-p port|device] [file]\n", cmd);
 }
 
 // Prints the name and destination of the file
@@ -67,9 +68,10 @@ static void print_help(FILE *dest, const char *cmd) {
     fprintf(dest, "\n");
     print_name_and_version(dest);
     fprintf(dest, "\n");
-    fprintf(dest, "Options and arguments:\n");
-    fprintf(dest, "-n : start a FastCGI worker\n");
-    fprintf(dest, "-h : print out this help text\n");
+    fprintf(dest, "Options:\n");
+    fprintf(dest, "  -p <port>, -p <dev>  start a FastCGI worker\n");
+    fprintf(dest, "  -f                   do not fork this FastCGI process\n");
+    fprintf(dest, "  -h                   print out this help text\n");
 }
 
 // Start the Lua REPL.
@@ -118,7 +120,7 @@ static int run_script(const char *fname, FILE *outdev, FILE *indev, FILE *errdev
         fprintf(errdev, "%s: could not create Lua state\n", LUADB_EXEC);
         return EXIT_FAILURE;
     }
-    luadb_set_relative_path(L, fname);
+    luadb_add_relative_path(L, fname);
 
     int err = luaL_dofile(L, fname);
     if (err) {
@@ -134,21 +136,27 @@ static int run_script(const char *fname, FILE *outdev, FILE *indev, FILE *errdev
 // Parse command line arguments
 static int parse_arguments(int argc, char *const argv[]) {
     int exit_code = EXIT_SUCCESS;
+    bool is_fcgi = false;
     char *fname = NULL;
+    char *fcgi_dev = NULL;
 
 #ifdef LUADB_USE_GETOPT
     int c;
 
     // Parse available arguments
-    while ((c = getopt (argc, argv, "hn:")) != -1) {
+    while ((c = getopt (argc, argv, "hp::")) != -1) {
         switch (c) {
             case 'h':
                 print_help(stdout, argv[0]);
                 goto exit_main;
-            case 'n':
-                fprintf(stderr, "%s: not implemented yet (arg: '%s')\n",
-                        LUADB_EXEC, optarg);
-                goto exit_main;
+            case 'p':
+                fcgi_dev = (optarg) ? (optarg) : ":8000";
+                is_fcgi = true;
+                break;
+            case 'f':
+                fprintf(stderr, "%s: option 'f' not implemented\n",
+                        LUADB_EXEC);
+                break;
             default:
                 fprintf(stderr, "%s: invalid option '%c' selected\n",
                         LUADB_EXEC, c);
@@ -156,6 +164,12 @@ static int parse_arguments(int argc, char *const argv[]) {
                 exit_code = EXIT_FAILURE;
                 goto exit_main;
         }
+    }
+
+    // Start the FastCGI (maybe) daemon
+    if (is_fcgi) {
+        exit_code = luadb_start_fcgi_worker(fcgi_dev);
+        goto exit_main;
     }
 
     // File name

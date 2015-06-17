@@ -12,6 +12,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <libgen.h>
+#include <stdbool.h>
 
 #include "deps/lua/lua.h"
 #include "deps/lua/lualib.h"
@@ -27,12 +28,16 @@ static const char *const PATH_SEPARATOR = "\\";
 #else  //_WIN32
 static const char *const PATH_SEPARATOR = "/";
 #endif //_WIN32
+#define ENDS_WITH_SEP(str, strlen) (str[strlen-1] == PATH_SEPARATOR[0])
 
 /*
  * FORWARD DECLARATIONS
  */
 
-static char *luadb_path(const char *cur_path, size_t len, const char *path);
+static char *append_luadb_path(const char *cur_path, size_t len,
+                               const char *path, bool truncate);
+static void update_lua_package_path(lua_State *L, const char *path,
+                                    bool truncate);
 
 /*
  * FORWARD DECLARATIONS
@@ -52,7 +57,22 @@ lua_State *luadb_new_state() {
     return L;
 }
 
-void luadb_set_relative_path(lua_State *L, const char *path) {
+void luadb_add_relative_path(lua_State *L, const char *path) {
+    update_lua_package_path(L, path, true);
+}
+
+void luadb_add_absolute_path(lua_State *L, const char *path) {
+    update_lua_package_path(L, path, false);
+}
+
+/*
+ * PRIVATE FUNCTIONS
+ */
+
+// Add the given path to the Lua global `package.path`.
+//
+// If `truncate` is specified, take a relative path from the given path.
+static void update_lua_package_path(lua_State *L, const char *path, bool truncate) {
     assert(L);
     assert(path);
 
@@ -63,7 +83,7 @@ void luadb_set_relative_path(lua_State *L, const char *path) {
     const char *cur_path = lua_tolstring(L, -1, &len);
 
     // Get the directory path
-    char *newpath = luadb_path(cur_path, len, path);
+    char *newpath = append_luadb_path(cur_path, len, path, truncate);
     if (!newpath) {
         return;
     }
@@ -77,13 +97,13 @@ void luadb_set_relative_path(lua_State *L, const char *path) {
     return;
 }
 
-/*
- * PRIVATE FUNCTIONS
- */
-
 // Update the current Lua package path with the input
 // path and return the updated path.
-static char *luadb_path(const char *cur_path, size_t len, const char *path) {
+//
+// If truncate is specified, use `dirname` to truncate the
+// given `path` down one level.
+static char *append_luadb_path(const char *cur_path, size_t len,
+                               const char *path, bool truncate) {
     // Create a copy of path, since dirname may modify the output
     size_t pathlen = strlen(path);
     char *pathcpy = malloc(pathlen + 1);
@@ -94,14 +114,21 @@ static char *luadb_path(const char *cur_path, size_t len, const char *path) {
     pathcpy[pathlen] = '\0';
 
     // Create space for the new path
-    char *dir = dirname(pathcpy);
+    char *dir = (truncate) ? dirname(pathcpy) : pathcpy;
     char *newpath = malloc(len + pathlen + 6 + 2);
     if (!newpath) {
+        free(pathcpy);
         return NULL;
     }
 
+    // Determine if a separator should be added
+    bool need_sep = !((truncate) ?
+                    ENDS_WITH_SEP(dir, strlen(dir)) :
+                    ENDS_WITH_SEP(path, pathlen));
+
     // Generate the new path
-    sprintf(newpath, "%s;%s%s?.lua", cur_path, dir, PATH_SEPARATOR);
+    sprintf(newpath, "%s;%s%s?.lua", cur_path, dir,
+            (need_sep) ? PATH_SEPARATOR : "");
     free(pathcpy);
     return newpath;
 }

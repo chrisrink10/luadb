@@ -32,6 +32,7 @@ check_struct_has_member(sockaddr_un sun_len sys/un.h HAVE_SOCKADDR_UN_SUN_LEN)
 
 check_include_files(arpa/inet.h HAVE_ARPA_INET_H)
 check_include_files(dlfcn.h HAVE_DLFCN_H)
+check_include_files(getopt.h HAVE_GETOPT_H)
 check_include_files(inttypes.h HAVE_INTTYPES_H)
 check_include_files(limits.h HAVE_LIMITS_H)
 check_include_files(memory.h HAVE_MEMORY_H)
@@ -75,30 +76,27 @@ set(LUADB_CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
 # Specific compile flags
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUA_USE_APICHECK")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99") #-O2 -DNDEBUG
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -pthread") #-O2 -DNDEBUG
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wno-format-extra-args")
-if (NOT WIN32)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -lm -pthread")
-endif(NOT WIN32)
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g")
 
 # FastCGI flags
 set(LUADB_FCGI_C_FLAGS "-D_XOPEN_SOURCE -D__USE_MISC")
-set(LUADB_FCGI_C_FLAGS "-Wno-pointer-sign -Wno-unused-function -Wno-unused-const-variable")
+set(LUADB_FCGI_C_FLAGS "${LUADB_FCGI_C_FLAGS} -Wno-pointer-sign -Wno-unused-function -Wno-unused-variable")
 configure_file(${PROJECT_SOURCE_DIR}/src/deps/fcgi/fcgi_config.h.in
                ${PROJECT_SOURCE_DIR}/src/deps/fcgi/fcgi_config.h)
 
 # LuaDB Flags
 set(LUADB_C_FLAGS "-Werror -Wno-unused-function")
-if (HAVE_UNISTD_H)
+if (HAVE_GETOPT_H)
     set(LUADB_C_FLAGS "${LUADB_C_FLAGS} -DLUADB_USE_GETOPT")
-endif(HAVE_UNISTD_H)
+endif(HAVE_GETOPT_H)
 if (HAVE_UUID_H)
     set(LUADB_C_FLAGS "${LUADB_C_FLAGS} -DLUADB_USE_UUID")
 endif(HAVE_UUID_H)
 
 # LMDB Flags
-set(LUADB_LMDB_C_FLAGS "-pthread -O2 -g -Wno-unused-parameter -Wbad-function-cast -Wuninitialized")
+set(LUADB_LMDB_C_FLAGS "-O2 -g -Wno-unused-parameter -Wbad-function-cast -Wuninitialized")
 
 # Specify the GNU99 standard if we're using MINGW
 if (MINGW)
@@ -116,6 +114,7 @@ endif(LIB_READLINE)
 
 # LuaDB native files
 set(SOURCE_FILES src/luadb.h
+                 src/fcgi.c
                  src/json.c
                  src/lmdb.c
                  src/main.c
@@ -216,9 +215,42 @@ set_target_properties(luadb PROPERTIES
 target_link_libraries(luadb fastcgi)
 target_link_libraries(luadb json)
 target_link_libraries(luadb luacore)
-target_link_libraries(luadb lual)
+target_link_libraries(luadb lual -lm)
 target_link_libraries(luadb lmdb)
 
 if (LIB_READLINE)
     target_link_libraries(luadb ${LIB_READLINE})
 endif(LIB_READLINE)
+
+##############################
+# Install Support Files
+##############################
+
+# Install to a different location for Windows
+if(NOT WIN32)
+    install(DIRECTORY
+            DESTINATION /etc/luadb)
+    install(DIRECTORY
+            DESTINATION /var/www/luadb)
+    install(DIRECTORY
+            DESTINATION /var/log/luadb)
+
+    install(FILES src/config/config.lua
+            DESTINATION /etc/luadb/)
+    install(FILES src/web/reqhandler.lua
+            DESTINATION /var/www/luadb)
+else(NOT WIN32)
+    install(DIRECTORY
+            DESTINATION "C:/luadb")
+    install(DIRECTORY
+            DESTINATION "C:/luadb/config")
+    install(DIRECTORY
+            DESTINATION "C:/luadb/web")
+    install(DIRECTORY
+            DESTINATION "C:/luadb/log")
+
+    install(FILES src/config/config.lua
+            DESTINATION "C:/luadb/config")
+    install(FILES src/web/reqhandler.lua
+            DESTINATION "C:/luadb/web")
+endif(NOT WIN32)

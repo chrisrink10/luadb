@@ -18,9 +18,19 @@
 lua_State *luadb_new_state();
 
 /**
+ * @brief Add the given path to the Lua `package.path` global exactly
+ * as it is given.
+ */
+void luadb_add_absolute_path(lua_State *L, const char *path);
+
+/**
  * @brief Add the relative path of the file specified (so that files
  * in that directory are included in the package path).
+ *
+ * Note that as a consequence of using `dirname` for the path selection,
+ * this function will select directories such as "/var/www" from even
+ * fully qualified directory paths (e.g. "/var/www/luadb/").
  */
-void luadb_set_relative_path(lua_State *L, const char *path);
+void luadb_add_relative_path(lua_State *L, const char *path);
 
 #endif //LUADB_STATE_H
