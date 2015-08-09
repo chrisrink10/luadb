@@ -8,13 +8,13 @@
  * License: MIT (see LICENSE document at source tree root)
  *****************************************************************************/
 
+#include <getopt.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <sys/types.h>
+#include <unistd.h>
 
-#ifdef LUADB_USE_GETOPT
-#include <getopt.h>
-#endif
 #ifdef LUADB_USE_READLINE
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -41,14 +41,6 @@ static const int REPL_BUFFER_SIZE = 512;
 #define REPL_ADD_HISTORY(buf) (void)0
 #define REPL_BUF_FREE(buf) (void)0
 #endif
-
-/* Handle command line options */
-#ifdef _WIN32
-#define LUADB_ARG_SYMBOL '/'
-#else  //_WIN32
-#define LUADB_ARG_SYMBOL '-'
-#endif //_WIN32
-
 
 // Print the short usage line
 static void print_usage(FILE *dest, const char *cmd) {
@@ -133,18 +125,42 @@ static int run_script(const char *fname, FILE *outdev, FILE *indev, FILE *errdev
     return exit_code;
 }
 
+// Start a FastCGI worker process, unless the user requests no fork.
+static int start_fcgi_worker(FILE *outdev, char *fcgi_dev, bool should_fork) {
+#ifdef _WIN32
+    return luadb_start_fcgi_worker(fcgi_dev);
+#else //_WIN32
+    // Do not fork the process, as requested by the caller
+    if (!should_fork) {
+        return luadb_start_fcgi_worker(fcgi_dev);
+    }
+
+    // Fork the process
+    pid_t pid = fork();
+    if (pid == -1) {
+        fprintf(outdev, "%s: failed to spawn FastCGI worker process\n",
+                LUADB_EXEC);
+        return EXIT_FAILURE;
+    } else if (pid == 0) {
+        int exit_code = luadb_start_fcgi_worker(fcgi_dev);
+        _exit(exit_code);
+    } else {
+        return EXIT_SUCCESS;
+    }
+#endif
+}
+
 // Parse command line arguments
 static int parse_arguments(int argc, char *const argv[]) {
     int exit_code = EXIT_SUCCESS;
     bool is_fcgi = false;
+    bool should_fork = true;
     char *fname = NULL;
     char *fcgi_dev = NULL;
-
-#ifdef LUADB_USE_GETOPT
     int c;
 
     // Parse available arguments
-    while ((c = getopt (argc, argv, "hp::")) != -1) {
+    while ((c = getopt (argc, argv, "fhp::")) != -1) {
         switch (c) {
             case 'h':
                 print_help(stdout, argv[0]);
@@ -154,8 +170,7 @@ static int parse_arguments(int argc, char *const argv[]) {
                 is_fcgi = true;
                 break;
             case 'f':
-                fprintf(stderr, "%s: option 'f' not implemented\n",
-                        LUADB_EXEC);
+                should_fork = false;
                 break;
             default:
                 fprintf(stderr, "%s: invalid option '%c' selected\n",
@@ -168,7 +183,7 @@ static int parse_arguments(int argc, char *const argv[]) {
 
     // Start the FastCGI (maybe) daemon
     if (is_fcgi) {
-        exit_code = luadb_start_fcgi_worker(fcgi_dev);
+        exit_code = start_fcgi_worker(stdout, fcgi_dev, should_fork);
         goto exit_main;
     }
 
@@ -176,39 +191,6 @@ static int parse_arguments(int argc, char *const argv[]) {
     if (optind < argc) {
         fname = argv[optind];
     }
-#else  // LUADB_USE_GETOPT
-    for (int i = 1; i < argc; i++) {
-        size_t len = strlen(argv[i]);
-        switch(argv[i][0]) {
-            case LUADB_ARG_SYMBOL:
-                if (len < 2) {
-                    fprintf(stderr, "%s: option must be specified after '-'\n",
-                            LUADB_EXEC);
-                    print_usage(stdout, argv[0]);
-                    exit_code = EXIT_FAILURE;
-                    goto exit_main;
-                }
-                switch(argv[i][1]) {
-                    case 'h':
-                        print_help(stdout, argv[0]);
-                        goto exit_main;
-                    case 'n':
-                        fprintf(stderr, "%s: not working yet :)\n",
-                                LUADB_EXEC);
-                        goto exit_main;
-                    default:
-                        fprintf(stderr, "%s: invalid option '%s' selected\n",
-                                LUADB_EXEC, argv[i]);
-                        print_usage(stdout, argv[0]);
-                        exit_code = EXIT_FAILURE;
-                        goto exit_main;
-                }
-                break;
-            default:
-                fname = (char*) argv[i];
-        }
-    }
-#endif // LUADB_USE_GETOPT
 
     // With no filename given, we can start the REPL, otherwise
     // run that script

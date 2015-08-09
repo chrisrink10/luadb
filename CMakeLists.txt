@@ -88,9 +88,6 @@ configure_file(${PROJECT_SOURCE_DIR}/src/deps/fcgi/fcgi_config.h.in
 
 # LuaDB Flags
 set(LUADB_C_FLAGS "-Werror -Wno-unused-function")
-if (HAVE_GETOPT_H)
-    set(LUADB_C_FLAGS "${LUADB_C_FLAGS} -DLUADB_USE_GETOPT")
-endif(HAVE_GETOPT_H)
 if (HAVE_UUID_H)
     set(LUADB_C_FLAGS "${LUADB_C_FLAGS} -DLUADB_USE_UUID")
 endif(HAVE_UUID_H)
