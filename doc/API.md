@@ -3,30 +3,6 @@
 User application code can use the following libraries to produce web
 responses from LuaDB applications.
 
-## `http` module
-The `http` module is a global available in the state for instances of LuaDB
-serving FastCGI requests. It provides clients with required APIs to read
-an HTTP request and respond appropriately.
-
-* `http.request` - HTTP request object
-    * `http.request.vars` - Table storing variables passed on from the
-      webserver during the FastCGI request.
-    * `http.request.query` - Table storing query parameters mapped to their
-      values.
-    * `http.request.headers` - Table storing HTTP headers mapped to their
-      values.
-    * `http.request.body` - The entire body of the HTTP request as a string.
-* `http.response` - Response object which will be read from the environment
-  once the Lua script has finished serving the request.
-    * `http.response.headers` - Table storing HTTP headers sent back to the
-      client
-    * `http.response.body` - Response body as a string
-    * `http.response.status` - Response status code as a string (default: 200)
-* `http.redirect(loc)` - Issue a 301 Response to redirect the client to
-  the URI given as the `loc` parameter.
-* `http.abort(stat)` - Issue a default (empty) response of the code given
-  as the `stat` parameter
-
 ## `json` module
 The `json` library provided by LuaDB allows callers to decode JSON from
 a string and encode Lua objects as JSON.

@@ -23,7 +23,7 @@
 #include "fcgi.h"
 
 static const char *const LUADB_HTTP_REQUEST_HANDLER = "/var/www/luadb/reqhandler.lua";   // Hard-coding for now
-static const char *const LUADB_FCGI_LOG_FORMAT = "[LuaDB] FastCGI Error: %s";
+static const char *const LUADB_FCGI_LOG_FORMAT = "[LuaDB] FCGI Error: %s %s";
 static const int FASTCGI_DEFAULT_BACKLOG = 10;
 static const int FASTCGI_DEFAULT_NUM_VARS = 20;
 static const int FASTCGI_DEFAULT_NUM_HEADERS = 10;  /* Approx num headers/req */
@@ -42,9 +42,11 @@ typedef enum LuaDB_FCGX_Result {
 
 static int init_fcgx_request(FCGX_Request *req, const char *path);
 static LuaDB_FCGX_Result process_fcgx_request(FCGX_Request *req);
+static int route_http_request(lua_State *L, FCGX_Request *req);
 static void send_http_response(lua_State *L, FCGX_Request *req);
-static int create_http_global(lua_State *L, FCGX_Request *req);
-static int create_http_response_table(lua_State *L);
+static void send_http_response_status(lua_State *L, FCGX_Request *req);
+static void send_http_response_headers(lua_State *L, FCGX_Request *req);
+static void send_http_response_body(lua_State *L, FCGX_Request *req);
 static int read_http_request(lua_State *L, FCGX_Request *req);
 static int read_http_request_headers(lua_State *L, FCGX_Request *req);
 static int read_http_request_vars(lua_State *L, FCGX_Request *req);
@@ -60,7 +62,7 @@ int luadb_start_fcgi_worker(const char *path) {
     FCGX_Request req;
 
     // Initialize the FCGI app request
-    if (init_fcgx_request(&req, path) != 0) {
+    if (!init_fcgx_request(&req, path)) {
         return EXIT_FAILURE;
     }
 
@@ -79,23 +81,28 @@ int luadb_start_fcgi_worker(const char *path) {
  * PRIVATE FUNCTIONS
  */
 
-// Initialize the FCGX request structure. Returns 1 on failure.
+// Initialize the FCGX request structure.
 static int init_fcgx_request(FCGX_Request *req, const char *path) {
     if (FCGX_Init() != 0) {
-        return 1;
+        return 0;
     }
     int sock = FCGX_OpenSocket(path, FASTCGI_DEFAULT_BACKLOG);
     if (sock == -1) {
-        return 1;
+        return 0;
     }
     if (FCGX_InitRequest(req, sock, 0) != 0) {
-        return 1;
+        return 0;
     }
 
-    return 0;
+    return 1;
 }
 
-// Process an FCGX request body
+// Process a single FastCGI request:
+// 1. Create a new LuaDB state.
+// 2. Load in the routing engine specified in user configuration.
+// 3. Call the routing engine with the request table.
+// 4. Process the response from the routing engine and return it to
+//    the web server.
 static LuaDB_FCGX_Result process_fcgx_request(FCGX_Request *req) {
     // Create a new Lua state
     lua_State *L = luadb_new_state();
@@ -105,21 +112,33 @@ static LuaDB_FCGX_Result process_fcgx_request(FCGX_Request *req) {
         return LUADB_FCGX_ERROR;
     }
 
-    // Read the HTTP request
-    int success = create_http_global(L, req);
-    if (!success) {
-        FCGX_FPrintF(req->err, LUADB_FCGI_LOG_FORMAT,
-                     "Could not create `http` global.");
-        lua_close(L);
-        return LUADB_FCGX_ERROR;
-    }
+    // Start the routing engine, which will push a function
+    // onto the stack accepting one parameter (the HTTP request)
     luadb_add_absolute_path(L, LUADB_WEB_ROOT);
-
-    // Start the routing engine
     int err = luaL_dofile(L, LUADB_HTTP_REQUEST_HANDLER);
     if (err) {
         const char *errmsg = lua_tostring(L, -1);
-        FCGX_FPrintF(req->err, LUADB_FCGI_LOG_FORMAT, errmsg);
+        FCGX_FPrintF(req->err, LUADB_FCGI_LOG_FORMAT,
+                     "Error occurred intializing routing engine: ", errmsg);
+        lua_close(L);
+        return LUADB_FCGX_ERROR;
+    }
+
+    // Read the HTTP request
+    if (!read_http_request(L, req)) {
+        FCGX_FPrintF(req->err, LUADB_FCGI_LOG_FORMAT,
+                     "Error occurred reading HTTP request.", "");
+        lua_close(L);
+        return LUADB_FCGX_ERROR;
+    }
+
+    // Route the HTTP request using the routing engine from the
+    // previous step
+    int success = route_http_request(L, req);
+    if (!success) {
+        const char *lua_error = lua_tostring(L, -1);
+        FCGX_FPrintF(req->err, LUADB_FCGI_LOG_FORMAT,
+                     "Error occurred routing HTTP request: ", lua_error);
         lua_close(L);
         return LUADB_FCGX_ERROR;
     }
@@ -130,14 +149,58 @@ static LuaDB_FCGX_Result process_fcgx_request(FCGX_Request *req) {
     return LUADB_FCGX_SUCCESS;
 }
 
-// Read the HTTP response from the Lua State and send it to the web server
-static void send_http_response(lua_State *L, FCGX_Request *req) {
+// Route an HTTP request through the defined routing engine.
+static int route_http_request(lua_State *L, FCGX_Request *req) {
     assert(L);
 
-    // Push the response table onto the stack
-    if (lua_getglobal(L, "http") != LUA_TTABLE) { return; }
-    lua_pushlstring(L, "response", 8);
-    if (lua_gettable(L, -2) != LUA_TTABLE) { return; }
+    // Call the routing engine function
+    int success = lua_pcall(L, 1, 1, 0);
+    if (success != LUA_OK) {
+        return 0;
+    }
+
+    return 1;
+}
+
+// Read the HTTP response from the Lua State and send it to the web server.
+//
+// We expect that the HTTP response table value should be pushed on the
+// stack from the function call return. It should contain the following
+// values:
+// - "status" : Lua string or number (e.g. "200 OK" or 200)
+// - "headers" : Lua table of HTTP headers
+// - "body" : Lua string or table
+static void send_http_response(lua_State *L, FCGX_Request *req) {
+    assert(L);
+    assert(req);
+
+    send_http_response_status(L, req);
+    send_http_response_headers(L, req);
+    send_http_response_body(L, req);
+}
+
+// Send out the HTTP response status.
+static void send_http_response_status(lua_State *L, FCGX_Request *req) {
+    assert(L);
+    assert(req);
+
+    // Get the status string
+    lua_pushlstring(L, "status", 7);
+    size_t statlen;
+    int type = lua_gettable(L, -2);
+    if (type == LUA_TSTRING || type == LUA_TNUMBER) {
+        const char *status = luaL_tolstring(L, -1, &statlen);
+        FCGX_FPrintF(req->out, "%s\r\n", status);
+    }
+
+    // Pop the status from the stack
+    if (type != LUA_TNONE) { lua_pop(L, 1); }
+}
+
+// Send out the HTTP response headers.
+static void send_http_response_headers(lua_State *L, FCGX_Request *req) {
+    assert(L);
+    assert(req);
 
     // Push headers onto the stack
     lua_pushlstring(L, "headers", 7);
@@ -147,7 +210,7 @@ static void send_http_response(lua_State *L, FCGX_Request *req) {
     lua_pushnil(L);
     while (lua_next(L, -2) != 0) {
         if ((lua_type(L, -2) != LUA_TSTRING) ||
-                (lua_type(L, -1) != LUA_TSTRING))
+            (lua_type(L, -1) != LUA_TSTRING))
         {
             luaL_error(L, "HTTP header fields and their values must be strings.");
             return;
@@ -164,64 +227,28 @@ static void send_http_response(lua_State *L, FCGX_Request *req) {
     // HTTP header separator
     FCGX_FPrintF(req->out, "Content-Type: text/html\r\n");
     FCGX_FPrintF(req->out, "\r\n");
+}
 
-    // HTTP response body
+// Send out the HTTP response body.
+static void send_http_response_body(lua_State *L, FCGX_Request *req) {
+    assert(L);
+    assert(req);
+
     lua_pushlstring(L, "body", 4);
     if (lua_gettable(L, -2) != LUA_TSTRING) { return; }
     const char *body = lua_tostring(L, -1);
     FCGX_FPrintF(req->out, "%s", body);
 }
 
-// Create the `http` global in the Lua state
-static int create_http_global(lua_State *L, FCGX_Request *req) {
-    // Create the `http` global
-    lua_createtable(L, 0, 4);
-
-    // Read in the incoming HTTP request
-    int read = read_http_request(L, req);
-    if (!read) {
-        return 0;
-    }
-
-    // Create the HTTP response table
-    int resp = create_http_response_table(L);
-    if (!resp) {
-        return 0;
-    }
-
-    // Set the global table
-    lua_setglobal(L, "http");
-    return 1;
-}
-
-// Create the `http.response` global table in the Lua state
-static int create_http_response_table(lua_State *L) {
-    assert(L);
-
-    // Create the `response` table
-    lua_pushlstring(L, "response", 8);
-    lua_createtable(L, 0, 3);
-
-    // Create the `http.response.headers` table
-    lua_pushlstring(L, "headers", 7);
-    lua_createtable(L, 0, FASTCGI_DEFAULT_NUM_HEADERS);
-    lua_settable(L, -3);
-
-    // Create the `http.response.body` string
-    lua_pushlstring(L, "body", 4);
-    lua_pushstring(L, "");
-    lua_settable(L, -3);
-
-    lua_settable(L, -3);
-    return 1;
-}
-
-// Insert the HTTP request headers and body into the Lua State.
+// Read in the HTTP request from the FastCGI server to a Lua
+// table value containing server variables ('vars'), request
+// headers ('headers'), and the request body ('body').
+//
+// Leaves one unnamed table on the stack.
 static int read_http_request(lua_State *L, FCGX_Request *req) {
     assert(L);
 
     // Add the request object
-    lua_pushlstring(L, "request", 7);
     lua_createtable(L, 0, 4);
 
     // Add the request body
@@ -243,15 +270,14 @@ static int read_http_request(lua_State *L, FCGX_Request *req) {
     }
 
     // Push the request table
-    lua_settable(L, -3);
     return 1;
 }
 
-// Read in the variables provided by the webserver to `http.request.vars`
+// Read in the FastCGI parameters from the web server.
 static int read_http_request_vars(lua_State *L, FCGX_Request *req) {
     assert(L);
 
-    // Create the `http.request.vars` table
+    // Create the `request.vars` table
     lua_pushlstring(L, "vars", 4);
     lua_createtable(L, 0, FASTCGI_DEFAULT_NUM_VARS);
 
@@ -292,11 +318,11 @@ static int read_http_request_vars(lua_State *L, FCGX_Request *req) {
     return 1;
 }
 
-// Read in the request headers to the global `http.request.headers`
+// Read in the HTTP request headers from the FastCGI server.
 static int read_http_request_headers(lua_State *L, FCGX_Request *req) {
     assert(L);
 
-    // Create the `http.request.headers` table
+    // Create the `request.headers` table
     lua_pushlstring(L, "headers", 7);
     lua_createtable(L, 0, FASTCGI_DEFAULT_NUM_HEADERS);
 
@@ -334,12 +360,12 @@ static int read_http_request_headers(lua_State *L, FCGX_Request *req) {
         free(header);
     }
 
-    // Push the headers table into the `http.request` table
+    // Push the headers table into the `request` table
     lua_settable(L, -3);
     return 1;
 }
 
-// Read in the request body to the global `http.request.body`
+// Read in the HTTP request body from the FastCGI server.
 static int read_http_request_body(lua_State *L, FCGX_Request *req) {
     assert(L);
 
@@ -359,7 +385,7 @@ static int read_http_request_body(lua_State *L, FCGX_Request *req) {
     // Read in the request body
     FCGX_GetStr(body, body_len, req->in);
 
-    // Create the `http.request.body` value
+    // Create the `request.body` value
     lua_pushlstring(L, "body", 4);
     lua_pushlstring(L, body, (size_t)body_len);
     lua_settable(L, -3);
