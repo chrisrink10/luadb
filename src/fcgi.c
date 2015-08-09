@@ -21,8 +21,9 @@
 #include "luadb.h"
 #include "state.h"
 #include "fcgi.h"
+#include "util.h"
 
-static const char *const LUADB_HTTP_REQUEST_HANDLER = "/var/www/luadb/reqhandler.lua";   // Hard-coding for now
+static const char *const LUADB_CONFIG_FILE = "config.lua";
 static const char *const LUADB_FCGI_LOG_FORMAT = "[LuaDB] FCGI Error: %s %s";
 static const int FASTCGI_DEFAULT_BACKLOG = 10;
 static const int FASTCGI_DEFAULT_NUM_VARS = 20;
@@ -34,6 +35,11 @@ static const size_t FASTCGI_ENVIRON_PREFIX_LEN = 5;
  * FORWARD DECLARATIONS
  */
 
+typedef struct LuaDB_Env_Config {
+    char *root;
+    char *router;
+} LuaDB_Env_Config;
+
 typedef enum LuaDB_FCGX_Result {
     LUADB_FCGX_SUCCESS,
     LUADB_FCGX_ERROR,
@@ -41,8 +47,10 @@ typedef enum LuaDB_FCGX_Result {
 } LuaDB_FCGX_Result;
 
 static int init_fcgx_request(FCGX_Request *req, const char *path);
-static LuaDB_FCGX_Result process_fcgx_request(FCGX_Request *req);
-static int route_http_request(lua_State *L, FCGX_Request *req);
+static int read_environment_config(LuaDB_Env_Config *config);
+static void clean_environment_config(LuaDB_Env_Config *config);
+static LuaDB_FCGX_Result process_fcgx_request(FCGX_Request *req, LuaDB_Env_Config *config);
+static int route_http_request(lua_State *L);
 static void send_http_response(lua_State *L, FCGX_Request *req);
 static void send_http_response_status(lua_State *L, FCGX_Request *req);
 static void send_http_response_headers(lua_State *L, FCGX_Request *req);
@@ -60,20 +68,29 @@ static char* convert_env_to_lower(const char *in, size_t len);
 
 int luadb_start_fcgi_worker(const char *path) {
     FCGX_Request req;
+    LuaDB_Env_Config config;
+
+    // Read the default environment configuration
+    if (!read_environment_config(&config)) {
+        return EXIT_FAILURE;
+    }
 
     // Initialize the FCGI app request
     if (!init_fcgx_request(&req, path)) {
+        clean_environment_config(&config);
         return EXIT_FAILURE;
     }
 
     // Accept FastCGI requests on the given device
     while (FCGX_Accept_r(&req) >= 0) {
-        LuaDB_FCGX_Result result = process_fcgx_request(&req);
+        LuaDB_FCGX_Result result = process_fcgx_request(&req, &config);
         if (result == LUADB_FCGX_FATAL) {
+            clean_environment_config(&config);
             return EXIT_FAILURE;
         }
     }
 
+    clean_environment_config(&config);
     return EXIT_SUCCESS;
 };
 
@@ -97,13 +114,64 @@ static int init_fcgx_request(FCGX_Request *req, const char *path) {
     return 1;
 }
 
+// Read the environment configuration file into a struct.
+static int read_environment_config(LuaDB_Env_Config *config) {
+    assert(config);
+
+    // Create the new filename
+    char *cfgfile = luadb_path_join(LUADB_CONFIG_FOLDER, LUADB_CONFIG_FILE);
+    if (!cfgfile) {
+        return 0;
+    }
+
+    // Spawn a quick Lua state to read the file
+    lua_State *L = luadb_new_state();
+    if (!L) {
+        free(cfgfile);
+        return 0;
+    }
+
+    // Read in our configuration file
+    int err = luaL_dofile(L, cfgfile);
+    if (err) {
+        free(cfgfile);
+        lua_close(L);
+        return 0;
+    }
+
+    // Read in the configuration options
+    lua_pushlstring(L, "root", 4);
+    lua_gettable(L, -2);
+    size_t rootlen;
+    const char *root = luaL_tolstring(L, -1, &rootlen);
+    config->root = luadb_strndup(root, rootlen);
+    lua_pop(L, 2);
+
+    lua_pushlstring(L, "router", 6);
+    lua_gettable(L, -2);
+    size_t routerlen;
+    const char *router = luaL_tolstring(L, -1, &routerlen);
+    config->router = luadb_path_njoin(config->root, rootlen, router, routerlen);
+    lua_pop(L, 2);
+
+    return 1;
+}
+
+// Clean up any strings saved in the environment configuration.
+static void clean_environment_config(LuaDB_Env_Config *config) {
+    assert(config);
+
+    free(config->root);
+    free(config->router);
+}
+
 // Process a single FastCGI request:
 // 1. Create a new LuaDB state.
 // 2. Load in the routing engine specified in user configuration.
 // 3. Call the routing engine with the request table.
 // 4. Process the response from the routing engine and return it to
 //    the web server.
-static LuaDB_FCGX_Result process_fcgx_request(FCGX_Request *req) {
+static LuaDB_FCGX_Result process_fcgx_request(FCGX_Request *req, LuaDB_Env_Config *config) {
     // Create a new Lua state
     lua_State *L = luadb_new_state();
     if (!L) {
@@ -114,8 +182,8 @@ static LuaDB_FCGX_Result process_fcgx_request(FCGX_Request *req) {
 
     // Start the routing engine, which will push a function
     // onto the stack accepting one parameter (the HTTP request)
-    luadb_add_absolute_path(L, LUADB_WEB_ROOT);
-    int err = luaL_dofile(L, LUADB_HTTP_REQUEST_HANDLER);
+    luadb_add_absolute_path(L, config->root);
+    int err = luaL_dofile(L, config->router);
     if (err) {
         const char *errmsg = lua_tostring(L, -1);
         FCGX_FPrintF(req->err, LUADB_FCGI_LOG_FORMAT,
@@ -134,7 +202,7 @@ static LuaDB_FCGX_Result process_fcgx_request(FCGX_Request *req) {
 
     // Route the HTTP request using the routing engine from the
     // previous step
-    int success = route_http_request(L, req);
+    int success = route_http_request(L);
     if (!success) {
         const char *lua_error = lua_tostring(L, -1);
         FCGX_FPrintF(req->err, LUADB_FCGI_LOG_FORMAT,
@@ -150,7 +218,7 @@ static LuaDB_FCGX_Result process_fcgx_request(FCGX_Request *req) {
 }
 
 // Route an HTTP request through the defined routing engine.
-static int route_http_request(lua_State *L, FCGX_Request *req) {
+static int route_http_request(lua_State *L) {
     assert(L);
 
     // Call the routing engine function
@@ -225,7 +293,6 @@ static void send_http_response_headers(lua_State *L, FCGX_Request *req) {
     lua_pop(L, 1);
 
     // HTTP header separator
-    FCGX_FPrintF(req->out, "Content-Type: text/html\r\n");
     FCGX_FPrintF(req->out, "\r\n");
 }
 

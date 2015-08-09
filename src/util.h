@@ -12,6 +12,16 @@
 #define LUADB_UTIL_H
 
 /**
+ * @brief Join two directory paths.
+ */
+char *luadb_path_join(const char *x, const char *y);
+
+/**
+ * @brief Join two directory paths with known lengths.
+ */
+char *luadb_path_njoin(const char *x, size_t xlen, const char *y, size_t ylen);
+
+/**
  * @brief Duplicate the input string up to the first @c NUL character.
  */
 char *luadb_strdup(const char *in);
