@@ -57,7 +57,6 @@ endif(WIN32)
 
 check_function_exists(strerror HAVE_STRERROR)
 
-find_library(LIB_READLINE readline)
 find_library(LIB_SOCKET socket)
 if (LIB_SOCKET)
     set(HAVE_LIBSOCKET 1)
@@ -99,11 +98,6 @@ set(LUADB_LMDB_C_FLAGS "-O2 -g -Wno-unused-parameter -Wbad-function-cast -Wunini
 if (MINGW)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99")
 endif(MINGW)
-
-# Test for readline
-if(LIB_READLINE)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUADB_USE_READLINE")
-endif(LIB_READLINE)
 
 ##############################
 # Source Files
@@ -196,6 +190,13 @@ if(WIN32)
     endif(LIB_KERNEL32_FOUND)
 endif(WIN32)
 
+# Linenoise library files
+set(LINENOISE_LIB_SRCS src/deps/linenoise/linenoise.c)
+add_library(linenoise STATIC ${LINENOISE_LIB_SRCS})
+set_target_properties(linenoise PROPERTIES
+    COMPILE_FLAGS "-Wall -W -Os -g"
+)
+
 ##############################
 # Generate Executable
 ##############################
@@ -214,10 +215,7 @@ target_link_libraries(luadb json)
 target_link_libraries(luadb luacore)
 target_link_libraries(luadb lual -lm)
 target_link_libraries(luadb lmdb)
-
-if (LIB_READLINE)
-    target_link_libraries(luadb ${LIB_READLINE})
-endif(LIB_READLINE)
+target_link_libraries(luadb linenoise)
 
 ##############################
 # Install Support Files

@@ -33,3 +33,6 @@ License.  For details, see src/deps/lmdb/.
 
 This product bundles FastCGI, which is available under the FastCGI license.
 For details, see src/deps/fcgi/.
+
+This product bundles Linenoise, which is available under a 2-Clause BSD
+License. For details, see src/deps/linenoise/.

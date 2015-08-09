@@ -61,5 +61,6 @@ of the licenses of bundled code.
  * [Symas LMDB](http://symas.com/mdb/) - key-value store used by LuaDB
  * [CCAN](http://www.ccodearchive.net) - source of JSON module used in LuaDB
  * [FastCGI](http://www.fastcgi.com) - source of FastCGI C module
+ * [Linenoise](https://github.com/antirez/linenoise) - line editing library
  * [mingw64](http://mingw-w64.yaxm.org/doku.php) - GCC for Windows
  * [CMake](http://www.cmake.org) - cross-platform make specification tool

@@ -15,11 +15,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#ifdef LUADB_USE_READLINE
-#include <readline/readline.h>
-#include <readline/history.h>
-#endif
-
+#include "deps/linenoise/linenoise.h"
 #include "deps/lua/lua.h"
 #include "deps/lua/lauxlib.h"
 
@@ -28,12 +24,12 @@
 #include "state.h"
 
 /* Handle line history and line editing for the REPL */
-#ifdef LUADB_USE_READLINE
+#ifndef _WIN32
 #define REPL_BUF_ALLOC() NULL
-#define REPL_READLINE(out, in, buf) (buf = readline("> "))
-#define REPL_ADD_HISTORY(buf) (buf && *buf) ? (add_history(buf)) : (void)0
+#define REPL_READLINE(out, in, buf) (buf = linenoise("> "))
+#define REPL_ADD_HISTORY(buf) (buf && *buf) ? (linenoiseHistoryAdd(buf)) : (void)0
 #define REPL_BUF_FREE(buf) free(buf)
-#else
+#else //_WIN32
 static const int REPL_BUFFER_SIZE = 512;
 #define REPL_BUF_ALLOC() malloc(REPL_BUFFER_SIZE)
 #define REPL_READLINE(out, in, buf) ((fprintf(out, "> ") >= 0) && \
