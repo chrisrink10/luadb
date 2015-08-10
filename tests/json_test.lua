@@ -22,15 +22,17 @@ local lt = LuaTest.new("json")
 -- Test that empty arrays are properly marshaled and unmarshaled
 function test_empty_arrays()
 	local json_str = '{"items":[],"properties":{}}'
+	local json_alt = '{"properties":{},"items":[]}'
 	local decoded = json.decode(json_str)
 	local mt = getmetatable(decoded["items"])
 	lt:assert_table_equal(decoded, { ["items"] = {}, ["properties"] = {} })
 	lt:assert_equal(json.isarray(decoded["items"]), true)
 	lt:assert_not_equal(mt, nil)
-	--lt:assert_equal(mt["_json_array"], true)
+	lt:assert_equal(mt["_json_array"], true)
 
 	local encoded = json.encode(decoded)
-	lt:assert_equal(json_str, encoded)
+	local are_equal = (json_str == encoded) or (json_alt == encoded)
+	lt:assert(are_equal)
 end
 
 -- Test that invalid JSON keys throw errors in encoding

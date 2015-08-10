@@ -197,8 +197,7 @@ static void json_to_lua_value_private(lua_State *L, JsonNode *json, int i) {
             break;
         case JSON_ARRAY:
             lua_newtable(L);
-            // TODO: for some reason, I cannot set a metatable on this table
-            //set_table_as_json_array(L, lua_gettop(L)-1);
+            set_table_as_json_array(L, lua_gettop(L));
             json_foreach(child, json) {
                 json_to_lua_value_private(L, child, i++);
             }
@@ -230,9 +229,10 @@ static inline void set_table_as_json_array(lua_State *L, int idx) {
     if (!lua_getmetatable(L, idx)) {
         lua_createtable(L, 0, 1);
     }
+    lua_pushstring(L, JSON_ARRAY_METAFIELD);
     lua_pushboolean(L, 1);
-    lua_setfield(L, -2, JSON_ARRAY_METAFIELD);
-    lua_setmetatable(L, idx);
+    lua_settable(L, -3);
+    lua_setmetatable(L, (idx < 0) ? (idx-1) : (idx));
 }
 
 // Convert a Lua table (ONLY) to JsonNode structure.
@@ -304,5 +304,7 @@ static bool lua_number_is_int(lua_Number n, int *v) {
 
 // Return true if the value at the given index is considered a JSON array.
 static inline bool lua_table_is_json_array(lua_State *L, int idx) {
-    return (luaL_getmetafield(L, idx, JSON_ARRAY_METAFIELD) != LUA_TNIL);
+    bool is_array = (luaL_getmetafield(L, idx, JSON_ARRAY_METAFIELD) != LUA_TNIL);
+    if (is_array) { lua_pop(L, 1); }
+    return is_array;
 }
