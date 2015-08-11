@@ -74,10 +74,10 @@ local function route(request)
     local routes = {
         ['/debug'] = http_debug,
     }
-    setmetatable(routes, { ["__index"] = not_found })
+    setmetatable(routes, { ["__index"] = function() return not_found end })
 
     -- Execute the route endpoint
-    local endpoint = routes[request.vars.request_uri]
+    local endpoint = routes[request.vars.document_uri]
     if endpoint ~= nil then
         local success, status, headers, body = pcall(endpoint, request)
         if not success then
