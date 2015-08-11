@@ -1179,19 +1179,31 @@ static int push_type(lua_State *L, const char *val, size_t len, int type) {
             return 1;
         case LMDB_NUMERIC_CHAR: {
             lua_Number f;
+#ifdef _WIN32
+            __mingw_sscanf(val, "%lf", &f);
+#else
             sscanf(val, "%lf", &f);
+#endif
             lua_pushnumber(L, f);
             return 1;
         }
         case LMDB_INTEGER_CHAR: {
             lua_Integer i;
+#ifdef _WIN32
+            __mingw_sscanf(val, "%lld", &f);
+#else
             sscanf(val, "%lld", &i);
+#endif
             lua_pushinteger(L, i);
             return 1;
         }
         case LMDB_BOOLEAN_CHAR: {
             int b;
+#ifdef _WIN32
+            __mingw_sscanf(val, "%d", &f);
+#else
             sscanf(val, "%d", &b);
+#endif
             lua_pushboolean(L, b);
             return 1;
         }

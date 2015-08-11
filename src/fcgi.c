@@ -349,7 +349,8 @@ static int read_http_request_vars(lua_State *L, FCGX_Request *req) {
     lua_createtable(L, 0, FASTCGI_DEFAULT_NUM_VARS);
 
     // Iterate on every environment variable, looking for HTTP_ prefix
-    char **environ = req->envp;
+    char **environ = NULL;
+    environ = req->envp;
     for (int i = 0; environ[i] != NULL; i++) {
         // Skip any headers with the prefix HTTP_
         if (strncmp(environ[i], FASTCGI_ENVIRON_PREFIX,
@@ -394,7 +395,8 @@ static int read_http_request_headers(lua_State *L, FCGX_Request *req) {
     lua_createtable(L, 0, FASTCGI_DEFAULT_NUM_HEADERS);
 
     // Iterate on every environment variable, looking for HTTP_ prefix
-    char **environ = req->envp;
+    char **environ = NULL;
+    environ = req->envp;
     for (int i = 0; environ[i] != NULL; i++) {
         // Skip any headers without the prefix HTTP_
         if (strncmp(environ[i], FASTCGI_ENVIRON_PREFIX,

@@ -191,11 +191,13 @@ if(WIN32)
 endif(WIN32)
 
 # Linenoise library files
-set(LINENOISE_LIB_SRCS src/deps/linenoise/linenoise.c)
-add_library(linenoise STATIC ${LINENOISE_LIB_SRCS})
-set_target_properties(linenoise PROPERTIES
-    COMPILE_FLAGS "-Wall -W -Os -g"
-)
+if(NOT WIN32)
+    set(LINENOISE_LIB_SRCS src/deps/linenoise/linenoise.c)
+    add_library(linenoise STATIC ${LINENOISE_LIB_SRCS})
+    set_target_properties(linenoise PROPERTIES
+        COMPILE_FLAGS "-Wall -W -Os -g"
+    )
+endif(NOT WIN32)
 
 ##############################
 # Generate Executable
@@ -215,7 +217,9 @@ target_link_libraries(luadb json)
 target_link_libraries(luadb luacore)
 target_link_libraries(luadb lual -lm)
 target_link_libraries(luadb lmdb)
-target_link_libraries(luadb linenoise)
+if (NOT WIN32)
+    target_link_libraries(luadb linenoise)
+endif(NOT WIN32)
 
 ##############################
 # Install Support Files
