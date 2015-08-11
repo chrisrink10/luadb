@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #ifdef LUADB_USE_UUID
 #include <uuid/uuid.h>
+#define UUID_STR_SIZE 37
 #else  //LUADB_USE_UUID
 #ifdef _WIN32
 #include <objbase.h>
@@ -82,17 +83,15 @@ char *luadb_create_guid() {
 // Create a UUID using uuid.h defined on most *NIX systems.
 static char *create_uuid_uuid() {
 #ifdef LUADB_USE_UUID
-    char *out = malloc(sizeof(uuid_string_t) + 1);
+    char *out = malloc(UUID_STR_SIZE + 1);
     if (!out) {
         return NULL;
     }
 
     uuid_t uuid;
-    uuid_string_t uuid_str;
     uuid_generate_random(uuid);
-    uuid_unparse(uuid, uuid_str);
+    uuid_unparse(uuid, out);
 
-    sprintf(out, "%s", uuid_str);
     return out;
 #else  //LUADB_USE_UUID
     return NULL;
