@@ -38,8 +38,20 @@ The `lmdb` module provides access to LMDB databases on the environment. Note
 that scripts are suggested against long-running transactions.
 
 * `lmdb.open(env, [opts])` - Open a new LMDB `Env` (single database file).
-  The available options are thus:
-    * TODO
+  The available options are below
+    * `fixedmap` - Use fixed mmap
+    * `nosubdir` - Do not use subdirectory
+    * `nosync` - Do not fsync after commit
+    * `rdonly` - Read only
+    * `nometasync` - Do not fsync metapage after commit
+    * `writemap` - Use writeable mmap
+    * `mapasync`- Use asynchronous msync with `writemap`
+    * `notls` - Tie locktable slots to Tx
+    * `nolock` - Let callers handle locks
+    * `nordahead` - Don't use readahead
+    * `nomeminit` - Do not initialize malloc'ed memory
+    * `maxreaders` - Maximum simultaneous readers (default: 126)
+    * `mapsize` - Map size (multiple of OS page size) (default: 10485760)
 * `lmdb.version()` - Return the LMDB version that this build of LuaDB was
   built against.
 * `lmdb.Env` - LMDB `Env`(ironments) represent a single database file on
@@ -66,9 +78,6 @@ that scripts are suggested against long-running transactions.
 * `lmdb.Transaction` - A single LMDB transaction.
     * `lmdb.Transaction:commit()` - Commit any pending changes in the
       transaction.
-    * `lmdb.Transaction:cursor([...])` - Provide a new cursor to use on this
-      transaction. Callers can specify zero or more keys to use as a range
-      prefix for the cursor.
     * `lmdb.Transaction:delete(...)` - Delete the value located at the
       given key.
     * `lmdb.Transaction:get(...)` - Get the value located at the given key.
@@ -77,21 +86,11 @@ that scripts are suggested against long-running transactions.
       nodes as a prefix. Returns the immediate next node value.
     * `lmdb.Transaction:rollback()` - Roll back any changes made in the
       transaction.
-* `lmdb.Cursor` - Cursor used to iterate over keys in a `Transaction`. Note
-  that if a cursor is called with parameters, these keys will be used as a
-  range prefix.
-    * `lmdb.Cursor:close()` - Close this cursor.
-    * `lmdb.Cursor:delete()` - Delete the current key/value pair.
-    * `lmdb.Cursor:first()` - Seek to the first key in the cursor.
-    * `lmdb.Cursor:item()` - Return a table with `key` and `value` elements.
-    * `lmdb.Cursor:key()` - Return the current key as an array.
-    * `lmdb.Cursor:last()` - Seek to the last key in the cursor.
-    * `lmdb.Cursor:next()` - Move the cursor forward one element.
-    * `lmdb.Cursor:prev()` - Move the cursor forward one element.
-    * `lmdb.Cursor:value()` - Return the current Lua value.
 
 ## `uuid` module
 The `uuid` module provides an easy way to produce Universally Unique
-Identifiers in your LuaDB environment.
+Identifiers in your LuaDB environment. This will require `libuuid` on NIX
+systems. Windows provides native support for GUIDs and can create them 
+without a third party library.
 
 * `uuid.uuid()` - Generate a UUID string. Returns `nil` if there was an error.

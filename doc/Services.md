@@ -27,3 +27,14 @@ response (specifically `status` as a number,  `headers` table, and `body`).
 A routing engine can call out to any arbitrary Lua code to generate the
 response, so long as it ultimately returns the values described above. The
 default LuaDB libraries are also available to code called via the router.
+
+### HTTP Request
+The request table passed to the routing engine contains the following fields
+that may be examined and manipulated by the routing engine:
+
+* `request` - HTTP request table
+    * `request.vars` - Table storing variables passed on from the
+      webserver during the FastCGI request.
+    * `request.headers` - Table storing HTTP headers mapped to their
+      values.
+    * `request.body` - The entire body of the HTTP request as a string.
