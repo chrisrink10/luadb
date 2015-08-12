@@ -35,9 +35,15 @@ static const size_t FASTCGI_ENVIRON_PREFIX_LEN = 5;
  * FORWARD DECLARATIONS
  */
 
+typedef struct Setting {
+    char *val;
+    size_t len;
+} Setting;
+
 typedef struct LuaDB_Env_Config {
-    char *root;
-    char *router;
+    Setting root;
+    Setting router;
+    Setting fcgi_query;
 } LuaDB_Env_Config;
 
 typedef enum LuaDB_FCGX_Result {
@@ -55,10 +61,11 @@ static void send_http_response(lua_State *L, FCGX_Request *req);
 static void send_http_response_status(lua_State *L, FCGX_Request *req);
 static void send_http_response_headers(lua_State *L, FCGX_Request *req);
 static void send_http_response_body(lua_State *L, FCGX_Request *req);
-static int read_http_request(lua_State *L, FCGX_Request *req);
+static int read_http_request(lua_State *L, FCGX_Request *req, LuaDB_Env_Config *config);
 static int read_http_request_headers(lua_State *L, FCGX_Request *req);
-static int read_http_request_vars(lua_State *L, FCGX_Request *req);
+static int read_http_request_vars(lua_State *L, FCGX_Request *req, LuaDB_Env_Config *config);
 static int read_http_request_body(lua_State *L, FCGX_Request *req);
+static int read_http_query_string(lua_State *L, const char *qs, size_t *len);
 static char* convert_env_to_header(const char *in, size_t len, size_t *outlen);
 static char* convert_env_to_lower(const char *in, size_t len);
 
@@ -140,18 +147,31 @@ static int read_environment_config(LuaDB_Env_Config *config) {
     }
 
     // Read in the configuration options
+    // TODO: check for error conditions (rather than assuming setting is present)
+    // TODO: log better to indicate failure reasons
+    // TODO: provide default configuration settings for absent settings
     lua_pushlstring(L, "root", 4);
     lua_gettable(L, -2);
     size_t rootlen;
     const char *root = luaL_tolstring(L, -1, &rootlen);
-    config->root = luadb_strndup(root, rootlen);
+    config->root.val = luadb_strndup(root, rootlen);
+    config->root.len = rootlen;
     lua_pop(L, 2);
 
     lua_pushlstring(L, "router", 6);
     lua_gettable(L, -2);
     size_t routerlen;
     const char *router = luaL_tolstring(L, -1, &routerlen);
-    config->router = luadb_path_njoin(config->root, rootlen, router, routerlen);
+    config->router.val = luadb_path_njoin(config->root.val, rootlen, router, routerlen);
+    config->router.len = routerlen;
+    lua_pop(L, 2);
+
+    lua_pushlstring(L, "fcgi_query", 10);
+    lua_gettable(L, -2);
+    size_t paramlen;
+    const char *fcgi_query = luaL_tolstring(L, -1, &paramlen);
+    config->fcgi_query.val = luadb_strndup(fcgi_query, paramlen);
+    config->fcgi_query.len = paramlen;
     lua_pop(L, 2);
 
     return 1;
@@ -161,8 +181,9 @@ static int read_environment_config(LuaDB_Env_Config *config) {
 static void clean_environment_config(LuaDB_Env_Config *config) {
     assert(config);
 
-    free(config->root);
-    free(config->router);
+    free(config->root.val);
+    free(config->router.val);
+    free(config->fcgi_query.val);
 }
 
 // Process a single FastCGI request:
@@ -182,8 +203,8 @@ static LuaDB_FCGX_Result process_fcgx_request(FCGX_Request *req, LuaDB_Env_Confi
 
     // Start the routing engine, which will push a function
     // onto the stack accepting one parameter (the HTTP request)
-    luadb_add_absolute_path(L, config->root);
-    int err = luaL_dofile(L, config->router);
+    luadb_add_absolute_path(L, config->root.val);
+    int err = luaL_dofile(L, config->router.val);
     if (err) {
         const char *errmsg = lua_tostring(L, -1);
         FCGX_FPrintF(req->err, LUADB_FCGI_LOG_FORMAT,
@@ -193,7 +214,7 @@ static LuaDB_FCGX_Result process_fcgx_request(FCGX_Request *req, LuaDB_Env_Confi
     }
 
     // Read the HTTP request
-    if (!read_http_request(L, req)) {
+    if (!read_http_request(L, req, config)) {
         FCGX_FPrintF(req->err, LUADB_FCGI_LOG_FORMAT,
                      "Error occurred reading HTTP request.", "");
         lua_close(L);
@@ -312,7 +333,7 @@ static void send_http_response_body(lua_State *L, FCGX_Request *req) {
 // headers ('headers'), and the request body ('body').
 //
 // Leaves one unnamed table on the stack.
-static int read_http_request(lua_State *L, FCGX_Request *req) {
+static int read_http_request(lua_State *L, FCGX_Request *req, LuaDB_Env_Config *config) {
     assert(L);
 
     // Add the request object
@@ -331,7 +352,7 @@ static int read_http_request(lua_State *L, FCGX_Request *req) {
     }
 
     // Add any web-server variables
-    int srv_vars = read_http_request_vars(L, req);
+    int srv_vars = read_http_request_vars(L, req, config);
     if (!srv_vars) {
         return 0;
     }
@@ -341,8 +362,9 @@ static int read_http_request(lua_State *L, FCGX_Request *req) {
 }
 
 // Read in the FastCGI parameters from the web server.
-static int read_http_request_vars(lua_State *L, FCGX_Request *req) {
+static int read_http_request_vars(lua_State *L, FCGX_Request *req, LuaDB_Env_Config *config) {
     assert(L);
+    const char *qs = NULL;
 
     // Create the `request.vars` table
     lua_pushlstring(L, "vars", 4);
@@ -364,6 +386,12 @@ static int read_http_request_vars(lua_State *L, FCGX_Request *req) {
             continue;
         }
 
+        // Cache a reference to the query string
+        if (!qs && (strncmp(environ[i], config->fcgi_query.val,
+                            config->fcgi_query.len) == 0)) {
+            qs = sep+1;
+        }
+
         // Find the length of the key
         size_t keylen = (size_t)(sep - environ[i]);
 
@@ -383,6 +411,17 @@ static int read_http_request_vars(lua_State *L, FCGX_Request *req) {
     }
 
     lua_settable(L, -3);
+
+    // Create a query table if we found a query string
+    if (qs) {
+        lua_pushlstring(L, "query", 5);
+        if (!read_http_query_string(L, qs, NULL)) {
+            lua_pop(L, 1);  // Pop the key if we couldn't parse the query string
+        } else {
+            lua_settable(L, -3);
+        }
+    }
+
     return 1;
 }
 
@@ -461,6 +500,62 @@ static int read_http_request_body(lua_State *L, FCGX_Request *req) {
 
     // Free the allocated string and return
     free(body);
+    return 1;
+}
+
+// Ensure we don't push a NULL string
+#define PUSH_VAL_STRING(L, iter) (iter.keylen > 0 && iter.key) ? \
+                                    (lua_pushlstring(L, iter.val, iter.vallen)) : \
+                                    (lua_pushstring(L, ""))
+// Read and parse the Query String parameter from the FastCGI server.
+static int read_http_query_string(lua_State *L, const char *qs, size_t *len) {
+    assert(L);
+    if (!qs) { return 0; }
+
+    // Verify we can handle all of these operations
+    luaL_checkstack(L, 6, "out of memory");
+
+    // Set up a query string iterator
+    luadb_query_iter iter;
+    luadb_init_query_iter(&iter, qs, len);
+
+    // Create a table from the query string
+    lua_newtable(L);
+
+    // Iterate over each k/v pair in the query string
+    while (luadb_next_query_field(&iter)) {
+        lua_pushlstring(L, iter.key, iter.keylen);
+        lua_pushvalue(L, -1);   // Duplicate the value, since we'll need it
+
+        int type = lua_gettable(L, -3); // Pops the second value
+        if (type == LUA_TTABLE) {       // There were previously values by this name
+            // Get the next array index (#table + 1)
+            lua_len(L, -1);
+            lua_pushinteger(L, 1);
+            lua_arith(L, LUA_OPADD);
+
+            // Add the next query string value at that index
+            PUSH_VAL_STRING(L, iter);
+            lua_settable(L, -3);
+            lua_pop(L, 1);
+        } else if ((type == LUA_TNIL) || (type == LUA_TNONE)) { // Not seen before
+            // Add the k/v pair into the table
+            if (type == LUA_TNIL) { lua_pop(L, 1); }
+            PUSH_VAL_STRING(L, iter);
+            lua_settable(L, -3);
+        } else {    // This value has been seen once before; need to make it an array
+            lua_createtable(L, 2, 0);
+            lua_rotate(L, -2, 1);       // Swap the table and original value
+            lua_pushinteger(L, 1);      // Push the integer 1 (future key)
+            lua_rotate(L, -2, 1);       // Swap the integer key and value
+            lua_settable(L, -3);        // Set the original key with a new table
+            lua_pushinteger(L, 2);      // Start pushing in the second (new) key
+            PUSH_VAL_STRING(L, iter);
+            lua_settable(L, -3);        // Set the new key/value pair into table
+            lua_settable(L, -3);        // Finally, set the table into the query table
+        }
+    }
+
     return 1;
 }
 

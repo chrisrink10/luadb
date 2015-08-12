@@ -26,6 +26,14 @@ local function http_debug(request)
     end
     table.insert(body, "</ul>")
 
+    -- Query parameters
+    table.insert(body, "<h4>Query Parameters</h4><ul>")
+    for k,v in pairs(request.query) do
+        local item = "<li>" .. k .. " = " .. tostring(v) .. "</li>"
+        table.insert(body, item)
+    end
+    table.insert(body, "</ul>")
+
     -- HTTP headers from the webserver
     table.insert(body, "<h3>HTTP Headers</h3><ul>")
     for k,v in pairs(request.headers) do

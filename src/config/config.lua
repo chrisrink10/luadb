@@ -18,4 +18,10 @@ config.root = "/var/www/luadb"
 -- Default: reqhandler
 config.router = "reqhandler.lua"
 
+-- FastCGI Query String Parameter
+-- The name of the FastCGI parameter sent from the web server
+-- which will contain the query string parameter.
+-- Default: QUERY_STRING
+config.fcgi_query = "QUERY_STRING"
+
 return config
