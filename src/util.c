@@ -16,8 +16,9 @@
 
 #include "util.h"
 
-static const char QUERY_STRING_KEY_SEPARATOR = '=';
-static const char QUERY_STRING_FIELD_SEPARATOR = '&';
+#define QUERY_STRING_KEY_SEPARATOR '='
+#define QUERY_STRING_FIELD_SEPARATOR '&'
+#define QUERY_STRING_FIELD_SEPARATOR_BACKUP ';'
 #ifdef _WIN32
 static const char *const PATH_SEPARATOR = "\\";
 #else  //_WIN32
@@ -61,25 +62,47 @@ bool luadb_next_query_field(luadb_query_iter *iter) {
         return false;
     }
 
-    // Set the key pointer to our current token; find the key/value separator
-    iter->key = iter->cur;
-    char *kvsep = strchr(iter->cur, (int) QUERY_STRING_KEY_SEPARATOR);
+    const char *cur = iter->cur;    // Current pointer for loop
+    const char *kvsep = NULL;       // Location of k/v separator '='
+    const char *fsep = NULL;        // Location of field separator '&' or ';'
+    bool done = false;              // Sentinel if we've found a full k/v pair
+    bool onlykey = false;           // Indicate if the current value is key only
+    iter->key = iter->cur;          // Note the start position for the key
 
-    // No value was found, so we only have a key
-    if (!kvsep) {
-        iter->cur = NULL;   // Set current NULL to indicate this iterator is done
-        iter->keylen = REMAINDER_LEN(iter, iter->key);
+    for (; cur; cur++) {
+        switch(cur[0]) {
+            case QUERY_STRING_KEY_SEPARATOR:
+                kvsep = &cur[0];
+                break;
+            case QUERY_STRING_FIELD_SEPARATOR:              // Fall through
+            case QUERY_STRING_FIELD_SEPARATOR_BACKUP:
+                if (!kvsep) { onlykey = true; }
+                fsep = &cur[0];
+                done = true;
+                break;
+            case '\0':
+                done = true;
+                break;
+            default:
+                break;
+        }
+        if (done) { break; }
+    }
+
+    // We have found a field which only contains a key and either:
+    // - there may be more fields => onlykey
+    // - we have reached the end => !kvsep
+    if (onlykey || !kvsep) {
+        iter->cur = (onlykey) ? (fsep + 1) : NULL;
+        iter->keylen = (onlykey) ? (fsep - iter->key) : REMAINDER_LEN(iter, iter->key);
         iter->val = NULL;   // No value found
         iter->vallen = 0;   // Value length is 0
         return true;
-    } else {
-        iter->cur = kvsep + 1;
-        iter->keylen = (kvsep - iter->key);
     }
 
-    // Seek to the end of the field (i.e. end of the value)
-    char *fsep = strchr(iter->cur, (int) QUERY_STRING_FIELD_SEPARATOR);
-    iter->val = iter->cur;  // Set to the current starting point
+    // Set a value pointer and compute a key length
+    iter->val = kvsep + 1;
+    iter->keylen = (kvsep - iter->key);
 
     // No next field was found; this is fine
     if (!fsep) {
@@ -103,6 +126,7 @@ char *luadb_strndup(const char *in, size_t n) {
         return NULL;
     }
 
-    strncpy(new, in, n);
+    memcpy(new, in, n);
+    new[n] = '\0';
     return new;
 }

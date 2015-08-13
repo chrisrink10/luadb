@@ -241,6 +241,7 @@ static JsonNode *lua_table_to_json_private(lua_State *L, int idx) {
     assert(L);
 
     JsonNode *json;
+    const char *orig = NULL;
     const char *key = NULL;
     char numstr[JSON_STRING_KEY_DIGITS];
     lua_Number num;
@@ -271,7 +272,8 @@ static JsonNode *lua_table_to_json_private(lua_State *L, int idx) {
                 key = &numstr[0];
                 break;
             case LUA_TSTRING:
-                key = luadb_strndup(luaL_tolstring(L, idx+1, &len), len+1);
+                orig = luaL_tolstring(L, idx+1, &len);
+                key = luadb_strndup(orig, len);
                 lua_pop(L, 1);
                 break;
             default:
