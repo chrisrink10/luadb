@@ -19,6 +19,50 @@ local lt = LuaTest.new("json")
 
 --[[ ENCODING TESTS ]]--
 
+-- Test that simple encoding cases work
+function test_basic_encode()
+	lt:assert_equal(json.encode(nil), "null")
+	lt:assert_equal(json.encode(10), "10")
+	lt:assert_equal(json.encode(15.54), "15.54")
+	lt:assert_equal(json.encode(0), "0")
+	lt:assert_equal(json.encode(-1823), "-1823")
+	lt:assert_equal(json.encode(true), "true")
+	lt:assert_equal(json.encode(false), "false")
+	lt:assert_equal(json.encode("string"), "\"string\"")
+	lt:assert_equal(json.encode(""), "\"\"")
+	lt:assert_equal(json.encode({}), "{}")
+
+	local tbl = { [1] = "number", ["key"] = "value" }
+	table.sort(tbl)
+	lt:assert_equal(json.encode(tbl), "{\"key\":\"value\",\"1\":\"number\"}")
+
+	local arr = { "first", true }
+	json.makearray(arr)
+	lt:assert_equal(json.encode(arr), "[\"first\",true]")
+end
+
+-- Test a few slightly more complex, but otherwise normal cases
+function test_normal_encoding()
+	local table =  {
+		["body"] = "",
+		["headers"] = { ["Accept-Language"] = "en-us" },
+		["query"] = {
+			["id"] = { ["1"] = "10", ["10"] = "11" },
+			["v"] = "w",
+			["lol"] = "this+is+a+string",
+			["somename"] = ""
+		},
+		["vars"] = {
+			["request_method"] = "GET",
+			["document_uri"] = "/debug"
+		},
+	}
+
+	local teststr = json.encode(table)
+	local retable = json.decode(teststr)
+	lt:assert_table_equal(table, retable)
+end
+
 -- Test that empty arrays are properly marshaled and unmarshaled
 function test_empty_arrays()
 	local json_str = '{"items":[],"properties":{}}'
@@ -166,10 +210,12 @@ end
 -- Add test runners to the test suite
 
 lt:add_case("encode", function()
+	test_basic_encode()
 	test_empty_arrays()
 	test_invalid_keys()
 	test_large_nums()
 	test_numeric_keys()
+	test_normal_encoding()
 	--test_ref_cycles()
 end)
 

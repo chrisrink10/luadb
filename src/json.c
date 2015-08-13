@@ -137,6 +137,7 @@ static JsonNode *lua_value_to_json(lua_State *L) {
             break;
         case LUA_TSTRING:
             json = json_mkstring(luaL_tolstring(L, top, NULL));
+            lua_pop(L, 1);
             break;
         case LUA_TNUMBER: {
             int isnum;
