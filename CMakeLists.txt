@@ -108,7 +108,8 @@ endif(MINGW)
 ##############################
 
 # LuaDB native files
-set(SOURCE_FILES src/luadb.h
+set(SOURCE_FILES src/config.c
+                 src/luadb.h
                  src/fcgi.c
                  src/json.c
                  src/lmdb.c
