@@ -53,6 +53,13 @@ void luadb_init_query_iter(luadb_query_iter *iter, const char* qs, size_t *len);
 bool luadb_next_query_field(luadb_query_iter *iter);
 
 /**
+ * @brief Provided a query string, duplicate that string byte-by-byte,
+ * decoding any percent encoding values used in URI syntax and other
+ * URI-safe characters (such as '+' for ' ').
+ */
+char *luadb_decode_query_str(const char *in, size_t inlen, size_t *outlen);
+
+/**
  * @brief Duplicate the input string up to the first @c NUL character.
  */
 char *luadb_strdup(const char *in);

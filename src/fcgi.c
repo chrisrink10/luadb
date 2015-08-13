@@ -425,9 +425,9 @@ static int read_http_request_body(lua_State *L, FCGX_Request *req) {
 }
 
 // Ensure we don't push a NULL string
-#define PUSH_VAL_STRING(L, iter) (iter.keylen > 0 && iter.key) ? \
-                                    (lua_pushlstring(L, iter.val, iter.vallen)) : \
-                                    (lua_pushstring(L, ""))
+#define PUSH_VAL_STRING(L, k, kl, v, vl) (kl > 0 && k) ? \
+                                            (lua_pushlstring(L, v, vl)) : \
+                                            (lua_pushstring(L, ""))
 // Read and parse the Query String parameter from the FastCGI server.
 static int read_http_query_string(lua_State *L, const char *qs, size_t *len) {
     assert(L);
@@ -445,7 +445,15 @@ static int read_http_query_string(lua_State *L, const char *qs, size_t *len) {
 
     // Iterate over each k/v pair in the query string
     while (luadb_next_query_field(&iter)) {
-        lua_pushlstring(L, iter.key, iter.keylen);
+        // Decode the query string values
+        size_t keylen;
+        char *key = luadb_decode_query_str(iter.key, iter.keylen, &keylen);
+        if (!key) { continue; }
+        size_t vallen;
+        char *val = luadb_decode_query_str(iter.val, iter.vallen, &vallen);
+
+        // Push the key onto the stack twice
+        lua_pushlstring(L, key, keylen);
         lua_pushvalue(L, -1);   // Duplicate the value, since we'll need it
 
         int type = lua_gettable(L, -3); // Pops the second value
@@ -456,13 +464,13 @@ static int read_http_query_string(lua_State *L, const char *qs, size_t *len) {
             lua_arith(L, LUA_OPADD);
 
             // Add the next query string value at that index
-            PUSH_VAL_STRING(L, iter);
+            PUSH_VAL_STRING(L, key, keylen, val, vallen);
             lua_settable(L, -3);
             lua_pop(L, 1);
         } else if ((type == LUA_TNIL) || (type == LUA_TNONE)) { // Not seen before
             // Add the k/v pair into the table
             if (type == LUA_TNIL) { lua_pop(L, 1); }
-            PUSH_VAL_STRING(L, iter);
+            PUSH_VAL_STRING(L, key, keylen, val, vallen);
             lua_settable(L, -3);
         } else {    // This value has been seen once before; need to make it an array
             lua_createtable(L, 2, 0);
@@ -471,10 +479,13 @@ static int read_http_query_string(lua_State *L, const char *qs, size_t *len) {
             lua_rotate(L, -2, 1);       // Swap the integer key and value
             lua_settable(L, -3);        // Set the original key with a new table
             lua_pushinteger(L, 2);      // Start pushing in the second (new) key
-            PUSH_VAL_STRING(L, iter);
+            PUSH_VAL_STRING(L, key, keylen, val, vallen);
             lua_settable(L, -3);        // Set the new key/value pair into table
             lua_settable(L, -3);        // Finally, set the table into the query table
         }
+
+        free(key);
+        free(val);
     }
 
     return 1;

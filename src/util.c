@@ -27,6 +27,13 @@ static const char *const PATH_SEPARATOR = "/";
 #define ENDS_WITH_SEP(str, strlen) (str[strlen-1] == PATH_SEPARATOR[0])
 #define REMAINDER_LEN(iter, field) (iter->qslen - (field - iter->qs))
 
+static char decode_hex(char hex[2]);
+static int hex_to_decimal(char hex);
+
+/*
+ * PUBLIC FUNCTIONS
+ */
+
 char *luadb_path_join(const char *x, const char *y) {
     return luadb_path_njoin(x, strlen(x), y, strlen(y));
 }
@@ -116,6 +123,46 @@ bool luadb_next_query_field(luadb_query_iter *iter) {
     return true;
 }
 
+char *luadb_decode_query_str(const char *in, size_t inlen, size_t *outlen) {
+    assert(outlen);
+    *outlen = 0;
+    if (!in) { return NULL; }
+
+    char *out = malloc(inlen);
+    if (!out) {
+        return NULL;
+    }
+
+    for (int i = 0; i < inlen; ) {
+        bool enough_chars;
+        switch (in[i]) {
+            case '%':
+                enough_chars = (i+2 < inlen) ? true : false;
+                if (enough_chars) {
+                    char hex[2];
+                    hex[0] = in[i+1];
+                    hex[1] = in[i+2];
+                    i += 3;
+                    out[*outlen] = decode_hex(hex);
+                    (*outlen)++;
+                }
+                break;
+            case '+':
+                out[*outlen] = ' ';
+                i++;
+                (*outlen)++;
+                break;
+            default:
+                out[*outlen] = in[i];
+                i++;
+                (*outlen)++;
+                break;
+        }
+    }
+
+    return out;
+}
+
 char *luadb_strdup(const char *in) {
     return luadb_strndup(in, strlen(in));
 }
@@ -129,4 +176,46 @@ char *luadb_strndup(const char *in, size_t n) {
     memcpy(new, in, n);
     new[n] = '\0';
     return new;
+}
+
+/*
+ * PRIVATE FUNCTIONS
+ */
+
+// Decode a two digit hex code into a decimal value.
+static char decode_hex(char hex[2]) {
+    int val = ((hex_to_decimal(hex[0]) * 16) + (hex_to_decimal(hex[1])));
+    return (char)val;
+}
+
+// Convert a single hex digit into decimal.
+static int hex_to_decimal(char hex) {
+    int v = -1;
+    switch(hex) {
+        case '0': v = 0; break;
+        case '1': v = 1; break;
+        case '2': v = 2; break;
+        case '3': v = 3; break;
+        case '4': v = 4; break;
+        case '5': v = 5; break;
+        case '6': v = 6; break;
+        case '7': v = 7; break;
+        case '8': v = 8; break;
+        case '9': v = 9; break;
+        case 'A': // Fall through
+        case 'a': v = 10; break;
+        case 'B': // Fall through
+        case 'b': v = 11; break;
+        case 'C': // Fall through
+        case 'c': v = 12; break;
+        case 'D': // Fall through
+        case 'd': v = 13; break;
+        case 'E': // Fall through
+        case 'e': v = 14; break;
+        case 'F': // Fall through
+        case 'f': v = 15; break;
+        default:
+            break;
+    }
+    return v;
 }
