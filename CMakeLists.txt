@@ -48,6 +48,7 @@ check_include_files(sys/socket.h HAVE_SYS_SOCKET_H)
 check_include_files(sys/stat.h HAVE_SYS_STAT_H)
 check_include_files(sys/time.h HAVE_SYS_TIME_H)
 check_include_files(sys/types.h HAVE_SYS_TYPES_H)
+check_include_files(syslog.h HAVE_SYSLOG_H)
 check_include_files(unistd.h HAVE_UNISTD_H)
 check_include_files(uuid/uuid.h HAVE_UUID_H)
 if(WIN32)
@@ -94,6 +95,9 @@ set(LUADB_C_FLAGS "-Werror -Wno-unused-function")
 if (HAVE_UUID_H)
     set(LUADB_C_FLAGS "${LUADB_C_FLAGS} -DLUADB_USE_UUID")
 endif(HAVE_UUID_H)
+if (HAVE_SYSLOG_H)
+    set(LUADB_C_FLAGS "${LUADB_C_FLAGS} -DLUADB_USE_SYSLOG")
+endif(HAVE_SYSLOG_H)
 
 # LMDB Flags
 set(LUADB_LMDB_C_FLAGS "-O2 -g -Wno-unused-parameter -Wbad-function-cast -Wuninitialized")
@@ -113,6 +117,7 @@ set(SOURCE_FILES src/config.c
                  src/fcgi.c
                  src/json.c
                  src/lmdb.c
+                 src/log.c
                  src/main.c
                  src/state.c
                  src/util.c
