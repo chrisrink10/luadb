@@ -10,6 +10,7 @@
 
 #include <assert.h>
 #include <limits.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -46,114 +47,114 @@ static const char LMDB_STRING_TYPE = LMDB_STRING_CHAR;
  */
 
 // LMDB Transaction type
-typedef struct luadb_lmdb_tx {
+typedef struct LuaDB_LmdbTx {
     MDB_txn *txn;
     MDB_dbi dbi;
-} luadb_lmdb_tx;
+} LuaDB_LmdbTx;
 
 // LMDB Cursor type
-typedef struct luadb_lmdb_cursor {
+typedef struct LuaDB_LmdbCursor {
     MDB_cursor *cur;
     char *prefix;
-} luadb_lmdb_cursor;
+} LuaDB_LmdbCursor;
 
 // LMDB Order type cursor
-typedef struct luadb_lmdb_order {
+typedef struct LuaDB_LmdbOrder {
     MDB_cursor *cur;
     char *prefix;
     size_t pfxlen;
     MDB_cursor_op op;
-} luadb_lmdb_order;
+} LuaDB_LmdbOrder;
 
-static int lmdb_env_tostring(lua_State *L);
-static int lmdb_env_begin_tx(lua_State *L);
-static int lmdb_env_close(lua_State *L);
-static int lmdb_env_copy(lua_State *L);
-static int lmdb_env_flags(lua_State *L);
-static int lmdb_env_info(lua_State *L);
-static int lmdb_env_max_key_size(lua_State *L);
-static int lmdb_env_max_readers(lua_State *L);
-static int lmdb_env_path(lua_State *L);
-static int lmdb_env_readers(lua_State *L);
-static int lmdb_env_reader_check(lua_State *L);
-static int lmdb_env_stat(lua_State *L);
-static int lmdb_env_sync(lua_State *L);
-static int lmdb_env__uuid(lua_State *L);
+static int LmdbEnv_ToString(lua_State *L);
+static int LmdbEnv_BeginTx(lua_State *L);
+static int LmdbEnv_Close(lua_State *L);
+static int LmdbEnv_Copy(lua_State *L);
+static int LmdbEnv_Flags(lua_State *L);
+static int LmdbEnv_Info(lua_State *L);
+static int LmdbEnv_MaxKeySize(lua_State *L);
+static int LmdbEnv_MaxReaders(lua_State *L);
+static int LmdbEnv_Path(lua_State *L);
+static int LmdbEnv_Readers(lua_State *L);
+static int LmdbEnv_ReaderCheck(lua_State *L);
+static int LmdbEnv_Stat(lua_State *L);
+static int LmdbEnv_Sync(lua_State *L);
+static int LmdbEnv__Uuid(lua_State *L);
 
-static int lmdb_tx_tostring(lua_State *L);
-static int lmdb_tx_close(lua_State *L);
-static int lmdb_tx_commit(lua_State *L);
-static int lmdb_tx__dbi(lua_State *L);
-static int lmdb_tx_delete(lua_State *L);
-static int lmdb_tx_get(lua_State *L);
-static int lmdb_tx_put(lua_State *L);
-static int lmdb_tx_order(lua_State *L);
+static int LmdbTx_ToString(lua_State *L);
+static int LmdbTx_Close(lua_State *L);
+static int LmdbTx_Commit(lua_State *L);
+static int LmdbTx__Dbi(lua_State *L);
+static int LmdbTx_Delete(lua_State *L);
+static int LmdbTx_Get(lua_State *L);
+static int LmdbTx_Put(lua_State *L);
+static int LmdbTx_Order(lua_State *L);
 
-static int lmdb_order_close(lua_State *L);
+static int Lmdb_OrderClose(lua_State *L);
 
-static MDB_env *open_mdb_env(const char *path, unsigned int flags, unsigned int max_readers, size_t map_size, int *err);
-static void get_mdb_env_flags(lua_State *L, unsigned int *flags, unsigned int *max_readers, size_t *map_size);
-static inline MDB_env *check_mdb_env(lua_State *L, int idx);
-static inline luadb_lmdb_tx *check_mdb_txn(lua_State *L, int idx);
-static void clean_lmdb_env_reference_table(lua_State *L, char *uuid);
-static int make_lmdb_env_reader_table(const char *msg, lua_State *L);
-static void add_tx_to_reference_table(lua_State *L, MDB_env *env, MDB_txn *txn, int idx);
-static void remove_tx_from_reference_table(lua_State *L, MDB_env *env, MDB_txn *txn, int idx);
-static char *make_lmdb_env_reference_table(lua_State *L);
-static char *get_lmdb_key(lua_State *L, size_t *len, int idx, int last);
-static char *generate_luadb_key(int *err, size_t *len, const char **keys, size_t *lens, char *types, int elems);
-static const char *next_luadb_key_segment(const char *key, size_t keylen, size_t pfxlen, size_t *len, int *type);
-static int push_type(lua_State *L, const char *val, size_t len, int type);
-static int order_tx(lua_State *L);
-static int make_lmdb_env_metatable(lua_State *L);
-static int make_lmdb_tx_metatable(lua_State *L);
-static int make_lmdb_cursor_metatable(lua_State *L);
+static MDB_env *OpenLmdbEnv(const char *path, unsigned int flags, unsigned int max_readers, size_t map_size, int *err);
+static void ReadLmdbEnvParamsFromLua(lua_State *L, unsigned int *flags, unsigned int *max_readers, size_t *map_size);
+static inline MDB_env *CheckLmdbEnvParam(lua_State *L, int idx);
+static inline LuaDB_LmdbTx *CheckLmdbTxParam(lua_State *L, int idx);
+static void CleanLmdbEnvRefTable(lua_State *L, char *uuid);
+static int LmdbEnvReaderTableCreate(const char *msg, lua_State *L);
+static void AddTxToLmdbEnvRefTable(lua_State *L, MDB_env *env, MDB_txn *txn, int idx);
+static void RemoveTxFromLmdbEnvRefTable(lua_State *L, MDB_env *env, MDB_txn *txn, int idx);
+static char *CreateLmdbEnvRefTable(lua_State *L);
+static char *GetLmdbKeyFromLua(lua_State *L, size_t *len, int idx, int last);
+static char *GenerateLuaDbKey(int *err, size_t *len, const char **keys, size_t *lens, char *types, int elems);
+static const char *NextKeySegment(const char *key, size_t keylen, size_t pfxlen, size_t *len, int *type);
+static bool PushValueByType(lua_State *L, const char *val, size_t len, int type);
+static int LuaDbOrderTxClosure(lua_State *L);
+static bool CreateLmdbEnvMetatable(lua_State *L);
+static bool CreateLmdbTxMetatable(lua_State *L);
+static bool CreateLmdbCursorMetatable(lua_State *L);
 
 // Library functions
 static luaL_Reg lmdb_lib_funcs[] = {
-        { "open", luadb_lmdb_open_env },
-        { "version", luadb_lmdb_version },
+        { "open", LuaDB_LmdbOpenEnv},
+        { "version", LuaDB_LmdbVersion},
         { NULL, NULL },
 };
 
 // LMDB Environment methods
 static luaL_Reg lmdb_env_methods[] = {
-        { "__gc", lmdb_env_close },
-        { "__tostring", lmdb_env_tostring },
-        { "begin", lmdb_env_begin_tx },
-        { "close", lmdb_env_close },
-        { "copy", lmdb_env_copy },
-        { "flags", lmdb_env_flags },
-        { "info", lmdb_env_info },
-        { "max_key_size", lmdb_env_max_key_size },
-        { "max_readers", lmdb_env_max_readers },
-        { "path", lmdb_env_path },
-        { "readers", lmdb_env_readers },
-        { "reader_check", lmdb_env_reader_check },
-        { "stat", lmdb_env_stat },
-        { "sync", lmdb_env_sync },
-        { "_uuid", lmdb_env__uuid },
+        { "__gc",  LmdbEnv_Close},
+        { "__tostring", LmdbEnv_ToString},
+        { "begin", LmdbEnv_BeginTx},
+        { "close", LmdbEnv_Close},
+        { "copy", LmdbEnv_Copy},
+        { "flags", LmdbEnv_Flags},
+        { "info", LmdbEnv_Info},
+        { "max_key_size", LmdbEnv_MaxKeySize},
+        { "max_readers", LmdbEnv_MaxReaders},
+        { "path", LmdbEnv_Path},
+        { "readers", LmdbEnv_Readers},
+        { "reader_check", LmdbEnv_ReaderCheck},
+        { "stat", LmdbEnv_Stat},
+        { "sync", LmdbEnv_Sync},
+        { "_uuid", LmdbEnv__Uuid},
         { NULL, NULL },
 };
 
 // LMDB Transaction methods
 static luaL_Reg lmdb_tx_methods[] = {
-        { "__gc", lmdb_tx_close },
-        { "__tostring", lmdb_tx_tostring },
-        { "close", lmdb_tx_close },
-        { "_dbi", lmdb_tx__dbi },
-        { "commit", lmdb_tx_commit },
-        { "delete", lmdb_tx_delete },
-        { "get", lmdb_tx_get },
-        { "put", lmdb_tx_put },
-        { "order", lmdb_tx_order },
-        { "rollback", lmdb_tx_close },
+        { "__gc",     LmdbTx_Close},
+        { "__tostring", LmdbTx_ToString},
+        { "close",    LmdbTx_Close},
+        { "_dbi", LmdbTx__Dbi},
+        { "commit", LmdbTx_Commit},
+        { "delete", LmdbTx_Delete},
+        { "get", LmdbTx_Get},
+        { "put", LmdbTx_Put},
+        { "order", LmdbTx_Order},
+        { "rollback", LmdbTx_Close},
         { NULL, NULL },
 };
 
 // LMDB Order Cursor methods
 static luaL_Reg lmdb_cursor_methods[] = {
-        { "__gc", lmdb_order_close },
+        { "__gc", Lmdb_OrderClose},
         { NULL, NULL },
 };
 
@@ -181,28 +182,28 @@ static luadb_env_flag lmdb_env_opts[] = {
  * PUBLIC FUNCTIONS
  */
 
-void luadb_add_lmdb_lib(lua_State *L) {
+void LuaDB_LmdbAddLib(lua_State *L) {
     // Create the lmdb.Environment metatable
-    make_lmdb_env_metatable(L);
-    make_lmdb_tx_metatable(L);
-    make_lmdb_cursor_metatable(L);
+    CreateLmdbEnvMetatable(L);
+    CreateLmdbTxMetatable(L);
+    CreateLmdbCursorMetatable(L);
 
     // Register library level functions
     luaL_newlib(L, lmdb_lib_funcs);
     lua_setglobal(L, "lmdb");
 }
 
-int luadb_lmdb_open_env(lua_State *L) {
+int LuaDB_LmdbOpenEnv(lua_State *L) {
     const char *path = luaL_checklstring(L, 1, NULL);
 
     // Get any flags or options passed in as parameters
     unsigned int flags, max_readers;
     size_t map_size;
-    get_mdb_env_flags(L, &flags, &max_readers, &map_size);
+    ReadLmdbEnvParamsFromLua(L, &flags, &max_readers, &map_size);
 
     // Open the environment
     int err;
-    MDB_env *env = open_mdb_env(path, flags, max_readers, map_size, &err);
+    MDB_env *env = OpenLmdbEnv(path, flags, max_readers, map_size, &err);
     if (!env) {
         luaL_error(L, "%s", mdb_strerror(err));
         return 0;
@@ -219,7 +220,7 @@ int luadb_lmdb_open_env(lua_State *L) {
     *loc = env;
 
     // Get the UUID for this table, which is used as user_ctx
-    char *uuid = make_lmdb_env_reference_table(L);
+    char *uuid = CreateLmdbEnvRefTable(L);
     if (!uuid) {
         mdb_env_close(env);
         luaL_error(L, "could not allocate memory for LMDB environment");
@@ -240,7 +241,7 @@ int luadb_lmdb_open_env(lua_State *L) {
     return 1;
 }
 
-int luadb_lmdb_version(lua_State *L) {
+int LuaDB_LmdbVersion(lua_State *L) {
     char *version = mdb_version(NULL, NULL, NULL);
     lua_pushstring(L, version);
     return 1;
@@ -250,8 +251,8 @@ int luadb_lmdb_version(lua_State *L) {
  * PRIVATE LUADB ENV CFUNCTIONS
  */
 
-static int lmdb_env_tostring(lua_State *L) {
-    MDB_env *env = check_mdb_env(L, 1);
+static int LmdbEnv_ToString(lua_State *L) {
+    MDB_env *env = CheckLmdbEnvParam(L, 1);
     const char *path;
     int err = mdb_env_get_path(env, &path);
     if (err != 0) {
@@ -263,8 +264,8 @@ static int lmdb_env_tostring(lua_State *L) {
     return 1;
 }
 
-static int lmdb_env_begin_tx(lua_State *L) {
-    MDB_env *env = check_mdb_env(L, 1);
+static int LmdbEnv_BeginTx(lua_State *L) {
+    MDB_env *env = CheckLmdbEnvParam(L, 1);
     MDB_txn *txn = NULL;
     unsigned int flags = 0;
 
@@ -282,7 +283,7 @@ static int lmdb_env_begin_tx(lua_State *L) {
 
     // Allocate space for the LMDB environment as a full userdata
     // Store the pointer to the environment there
-    luadb_lmdb_tx *loc = lua_newuserdata(L, sizeof(luadb_lmdb_tx));
+    LuaDB_LmdbTx *loc = lua_newuserdata(L, sizeof(LuaDB_LmdbTx));
     loc->txn = txn;
 
     // Set the Env metatable
@@ -291,12 +292,12 @@ static int lmdb_env_begin_tx(lua_State *L) {
 
     // Add our weak Txn reference
     int idx = lua_gettop(L);
-    add_tx_to_reference_table(L, env, txn, idx);
+    AddTxToLmdbEnvRefTable(L, env, txn, idx);
 
     // Get a DBI handle for the database
     err = mdb_dbi_open(txn, NULL, 0, &loc->dbi);
     if (err != 0) {
-        remove_tx_from_reference_table(L, NULL, txn, idx);
+        RemoveTxFromLmdbEnvRefTable(L, NULL, txn, idx);
         mdb_txn_abort(txn);
         luaL_error(L, "could not create a database handle");
         return 0;
@@ -304,7 +305,7 @@ static int lmdb_env_begin_tx(lua_State *L) {
     return 1;
 }
 
-static int lmdb_env_close(lua_State *L) {
+static int LmdbEnv_Close(lua_State *L) {
     MDB_env **loc = luaL_checkudata(L, 1, LMDB_ENV_REGISTRY_NAME);
     MDB_env *env = *loc;
 
@@ -318,7 +319,7 @@ static int lmdb_env_close(lua_State *L) {
     // cursors and transactions before closing the environment.
     char *uuid = mdb_env_get_userctx(env);
     if (uuid) {
-        clean_lmdb_env_reference_table(L, uuid);
+        CleanLmdbEnvRefTable(L, uuid);
         free(uuid);
     }
 
@@ -327,8 +328,8 @@ static int lmdb_env_close(lua_State *L) {
     return 0;
 }
 
-static int lmdb_env_copy(lua_State *L) {
-    MDB_env *env = check_mdb_env(L, 1);
+static int LmdbEnv_Copy(lua_State *L) {
+    MDB_env *env = CheckLmdbEnvParam(L, 1);
     const char *path = luaL_checkstring(L, 2);
 
     unsigned int flags = 0;
@@ -346,8 +347,8 @@ static int lmdb_env_copy(lua_State *L) {
     return 0;
 }
 
-static int lmdb_env_flags(lua_State *L) {
-    MDB_env *env = check_mdb_env(L, 1);
+static int LmdbEnv_Flags(lua_State *L) {
+    MDB_env *env = CheckLmdbEnvParam(L, 1);
     unsigned int flags;
 
     int err = mdb_env_get_flags(env, &flags);
@@ -368,8 +369,8 @@ static int lmdb_env_flags(lua_State *L) {
     return 1;
 }
 
-static int lmdb_env_info(lua_State *L) {
-    MDB_env *env = check_mdb_env(L, 1);
+static int LmdbEnv_Info(lua_State *L) {
+    MDB_env *env = CheckLmdbEnvParam(L, 1);
     MDB_envinfo info;
 
     int err = mdb_env_info(env, &info);
@@ -408,15 +409,15 @@ static int lmdb_env_info(lua_State *L) {
     return 1;
 }
 
-static int lmdb_env_max_key_size(lua_State *L) {
-    MDB_env *env = check_mdb_env(L, 1);
+static int LmdbEnv_MaxKeySize(lua_State *L) {
+    MDB_env *env = CheckLmdbEnvParam(L, 1);
     int max = mdb_env_get_maxkeysize(env);
     lua_pushnumber(L, max);
     return 1;
 }
 
-static int lmdb_env_max_readers(lua_State *L) {
-    MDB_env *env = check_mdb_env(L, 1);
+static int LmdbEnv_MaxReaders(lua_State *L) {
+    MDB_env *env = CheckLmdbEnvParam(L, 1);
     unsigned int max;
     int err = mdb_env_get_maxreaders(env, &max);
     if (err != 0) {
@@ -427,8 +428,8 @@ static int lmdb_env_max_readers(lua_State *L) {
     return 1;
 }
 
-static int lmdb_env_path(lua_State *L) {
-    MDB_env *env = check_mdb_env(L, 1);
+static int LmdbEnv_Path(lua_State *L) {
+    MDB_env *env = CheckLmdbEnvParam(L, 1);
     const char *path;
     int err = mdb_env_get_path(env, &path);
     if (err != 0) {
@@ -439,13 +440,13 @@ static int lmdb_env_path(lua_State *L) {
     return 1;
 }
 
-static int lmdb_env_readers(lua_State *L) {
-    MDB_env *env = check_mdb_env(L, 1);
+static int LmdbEnv_Readers(lua_State *L) {
+    MDB_env *env = CheckLmdbEnvParam(L, 1);
     luaL_checkstack(L, 4, "out of memory");
     lua_newtable(L);
     lua_pushnumber(L, 1);   // Push an index onto the stack for the callback
 
-    int err = mdb_reader_list(env, (MDB_msg_func *) make_lmdb_env_reader_table, L);
+    int err = mdb_reader_list(env, (MDB_msg_func *) LmdbEnvReaderTableCreate, L);
     if (err < 0) {
         luaL_error(L, "%s", mdb_strerror(err));
         return 0;
@@ -455,8 +456,8 @@ static int lmdb_env_readers(lua_State *L) {
     return 1;
 }
 
-static int lmdb_env_reader_check(lua_State *L) {
-    MDB_env *env = check_mdb_env(L, 1);
+static int LmdbEnv_ReaderCheck(lua_State *L) {
+    MDB_env *env = CheckLmdbEnvParam(L, 1);
     int dead;
     int err = mdb_reader_check(env, &dead);
     if (err != 0) {
@@ -467,8 +468,8 @@ static int lmdb_env_reader_check(lua_State *L) {
     return 1;
 }
 
-static int lmdb_env_stat(lua_State *L) {
-    MDB_env *env = check_mdb_env(L, 1);
+static int LmdbEnv_Stat(lua_State *L) {
+    MDB_env *env = CheckLmdbEnvParam(L, 1);
     MDB_stat stat;
 
     int err = mdb_env_stat(env, &stat);
@@ -507,8 +508,8 @@ static int lmdb_env_stat(lua_State *L) {
     return 1;
 }
 
-static int lmdb_env_sync(lua_State *L) {
-    MDB_env *env = check_mdb_env(L, 1);
+static int LmdbEnv_Sync(lua_State *L) {
+    MDB_env *env = CheckLmdbEnvParam(L, 1);
     int force = 0;
 
     if (!lua_isnone(L, 2)) {
@@ -519,8 +520,8 @@ static int lmdb_env_sync(lua_State *L) {
     return 1;
 }
 
-static int lmdb_env__uuid(lua_State *L) {
-    MDB_env *env = check_mdb_env(L, 1);
+static int LmdbEnv__Uuid(lua_State *L) {
+    MDB_env *env = CheckLmdbEnvParam(L, 1);
 
     char *uuid = mdb_env_get_userctx(env);
     if (!uuid) {
@@ -536,14 +537,14 @@ static int lmdb_env__uuid(lua_State *L) {
  * PRIVATE LUADB TX CFUNCTIONS
  */
 
-static int lmdb_tx_tostring(lua_State *L) {
-    luadb_lmdb_tx *loc = check_mdb_txn(L, 1);
+static int LmdbTx_ToString(lua_State *L) {
+    LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
     lua_pushfstring(L, "lmdb.Tx(%u)", loc->dbi);
     return 1;
 }
 
-static int lmdb_tx_close(lua_State *L) {
-    luadb_lmdb_tx *loc = luaL_checkudata(L, 1, LMDB_TX_REGISTRY_NAME);
+static int LmdbTx_Close(lua_State *L) {
+    LuaDB_LmdbTx *loc = luaL_checkudata(L, 1, LMDB_TX_REGISTRY_NAME);
 
     if (!loc) {
         luaL_error(L, "LMDB transaction not found");
@@ -560,15 +561,15 @@ static int lmdb_tx_close(lua_State *L) {
     }
 
     // Clean this Txn reference from the table
-    remove_tx_from_reference_table(L, env, loc->txn, lua_gettop(L));
+    RemoveTxFromLmdbEnvRefTable(L, env, loc->txn, lua_gettop(L));
 
     mdb_txn_abort(loc->txn);
     loc->txn = NULL;
     return 0;
 }
 
-static int lmdb_tx_commit(lua_State *L) {
-    luadb_lmdb_tx *loc = luaL_checkudata(L, 1, LMDB_TX_REGISTRY_NAME);
+static int LmdbTx_Commit(lua_State *L) {
+    LuaDB_LmdbTx *loc = luaL_checkudata(L, 1, LMDB_TX_REGISTRY_NAME);
 
     if (!loc) {
         luaL_error(L, "LMDB transaction not found");
@@ -585,7 +586,7 @@ static int lmdb_tx_commit(lua_State *L) {
     }
 
     // Clean this Txn reference from the table
-    remove_tx_from_reference_table(L, env, loc->txn, lua_gettop(L));
+    RemoveTxFromLmdbEnvRefTable(L, env, loc->txn, lua_gettop(L));
 
     int err = mdb_txn_commit(loc->txn);
     if (err != 0) {
@@ -597,7 +598,7 @@ static int lmdb_tx_commit(lua_State *L) {
 }
 
 static int lmdb_tx_cursor(lua_State *L) {
-    luadb_lmdb_tx *loc = check_mdb_txn(L, 1);
+    LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
 
     MDB_cursor *cur;
     int err = mdb_cursor_open(loc->txn, loc->dbi, &cur);
@@ -608,10 +609,10 @@ static int lmdb_tx_cursor(lua_State *L) {
 
     // Generate the given prefix
     size_t len;
-    char *pfx = get_lmdb_key(L, &len, 2, lua_gettop(L));
+    char *pfx = GetLmdbKeyFromLua(L, &len, 2, lua_gettop(L));
 
     // Get a full userdatum
-    luadb_lmdb_cursor *curloc = lua_newuserdata(L, sizeof(luadb_lmdb_cursor));
+    LuaDB_LmdbCursor *curloc = lua_newuserdata(L, sizeof(LuaDB_LmdbCursor));
     curloc->cur = cur;
     curloc->prefix = pfx;
 
@@ -622,12 +623,12 @@ static int lmdb_tx_cursor(lua_State *L) {
     return 1;
 }
 
-static int lmdb_tx_delete(lua_State *L) {
-    luadb_lmdb_tx *loc = check_mdb_txn(L, 1);
+static int LmdbTx_Delete(lua_State *L) {
+    LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
     MDB_val key;
 
     // Create a LMDB key from multiple input parameters
-    char *tkey = get_lmdb_key(L, &key.mv_size, 2, lua_gettop(L));
+    char *tkey = GetLmdbKeyFromLua(L, &key.mv_size, 2, lua_gettop(L));
     key.mv_data = tkey;
 
     // Delete the value in the database
@@ -646,13 +647,13 @@ static int lmdb_tx_delete(lua_State *L) {
     return 1;
 }
 
-static int lmdb_tx_get(lua_State *L) {
-    luadb_lmdb_tx *loc = check_mdb_txn(L, 1);
+static int LmdbTx_Get(lua_State *L) {
+    LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
     MDB_val key;
     MDB_val val;
 
     // Create a LMDB key from multiple input parameters
-    char *tkey = get_lmdb_key(L, &key.mv_size, 2, lua_gettop(L));
+    char *tkey = GetLmdbKeyFromLua(L, &key.mv_size, 2, lua_gettop(L));
     key.mv_data = tkey;
 
     // Get the value in the database
@@ -672,8 +673,8 @@ static int lmdb_tx_get(lua_State *L) {
     return 1;
 }
 
-static int lmdb_tx_put(lua_State *L) {
-    luadb_lmdb_tx *loc = check_mdb_txn(L, 1);
+static int LmdbTx_Put(lua_State *L) {
+    LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
     MDB_val key;
     MDB_val val;
     unsigned int flags = 0;
@@ -683,7 +684,7 @@ static int lmdb_tx_put(lua_State *L) {
     val.mv_data = (void*)tval;
 
     // Create a LMDB key from multiple input parameters
-    char *tkey = get_lmdb_key(L, &key.mv_size, 3, lua_gettop(L));
+    char *tkey = GetLmdbKeyFromLua(L, &key.mv_size, 3, lua_gettop(L));
     key.mv_data = tkey;
 
     // Put the values into the database
@@ -696,8 +697,8 @@ static int lmdb_tx_put(lua_State *L) {
     return 0;
 }
 
-static int lmdb_tx_order(lua_State *L) {
-    luadb_lmdb_tx *loc = check_mdb_txn(L, 1);
+static int LmdbTx_Order(lua_State *L) {
+    LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
 
     MDB_cursor *cur;
     int err = mdb_cursor_open(loc->txn, loc->dbi, &cur);
@@ -708,10 +709,10 @@ static int lmdb_tx_order(lua_State *L) {
 
     // Generate the given prefix
     size_t len;
-    char *pfx = get_lmdb_key(L, &len, 2, lua_gettop(L));
+    char *pfx = GetLmdbKeyFromLua(L, &len, 2, lua_gettop(L));
 
     // Get a full userdatum
-    luadb_lmdb_order *curloc = lua_newuserdata(L, sizeof(luadb_lmdb_order));
+    LuaDB_LmdbOrder *curloc = lua_newuserdata(L, sizeof(LuaDB_LmdbOrder));
     curloc->cur = cur;
     curloc->prefix = pfx;
     curloc->pfxlen = len;
@@ -721,14 +722,14 @@ static int lmdb_tx_order(lua_State *L) {
     luaL_getmetatable(L, LMDB_CURSOR_REGISTRY_NAME);
     lua_setmetatable(L, -2);
 
-    // Push the private order_tx function on the stack as a closure
+    // Push the private LuaDbOrderTxClosure function on the stack as a closure
     // containing the previously declared cursor as it's upvalue
-    lua_pushcclosure(L, &order_tx, 1);
+    lua_pushcclosure(L, &LuaDbOrderTxClosure, 1);
     return 1;
 }
 
-static int lmdb_tx__dbi(lua_State *L) {
-    luadb_lmdb_tx *loc = check_mdb_txn(L, 1);
+static int LmdbTx__Dbi(lua_State *L) {
+    LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
     lua_pushnumber(L, loc->dbi);
     return 1;
 }
@@ -737,8 +738,8 @@ static int lmdb_tx__dbi(lua_State *L) {
  * PRIVATE LUADB CURSOR CFUNCTIONS
  */
 
-static int lmdb_order_close(lua_State *L) {
-    luadb_lmdb_order *cur = luaL_checkudata(L, lua_upvalueindex(1),
+static int Lmdb_OrderClose(lua_State *L) {
+    LuaDB_LmdbOrder *cur = luaL_checkudata(L, lua_upvalueindex(1),
                                             LMDB_CURSOR_REGISTRY_NAME);
 
     if (!cur) {
@@ -758,7 +759,7 @@ static int lmdb_order_close(lua_State *L) {
  */
 
 // Create a new MDB_env with the given options.
-static MDB_env *open_mdb_env(const char *path, unsigned int flags, unsigned int max_readers, size_t map_size, int *err) {
+static MDB_env *OpenLmdbEnv(const char *path, unsigned int flags, unsigned int max_readers, size_t map_size, int *err) {
     MDB_env *env = NULL;
     mdb_mode_t mode = LMDB_DEFAULT_MODE;
 
@@ -787,7 +788,7 @@ static MDB_env *open_mdb_env(const char *path, unsigned int flags, unsigned int 
 }
 
 // Load the MDB environment options from the user's open parameters.
-static void get_mdb_env_flags(lua_State *L, unsigned int *flags, unsigned int *max_readers, size_t *map_size) {
+static void ReadLmdbEnvParamsFromLua(lua_State *L, unsigned int *flags, unsigned int *max_readers, size_t *map_size) {
     int type = lua_type(L, 2);
 
     // Set some defaults for each of the settings
@@ -848,7 +849,7 @@ static void get_mdb_env_flags(lua_State *L, unsigned int *flags, unsigned int *m
 // This function issues a Lua error if the environment variable isn't
 // found (i.e. is NULL), so it would technically be safe to avoid a
 // NULL check on the return here.
-static inline MDB_env *check_mdb_env(lua_State *L, int idx) {
+static inline MDB_env *CheckLmdbEnvParam(lua_State *L, int idx) {
     assert(L);
 
     MDB_env **loc = luaL_checkudata(L, idx, LMDB_ENV_REGISTRY_NAME);
@@ -861,15 +862,15 @@ static inline MDB_env *check_mdb_env(lua_State *L, int idx) {
     return *loc;
 }
 
-// Check for a luadb_lmdb_tx as a function parameter and dererence it.
+// Check for a LuaDB_LmdbTx as a function parameter and dererence it.
 //
 // This function issues a Lua error if the transaction variable isn't
 // found (i.e. is NULL), so it would technically be safe to avoid a
 // NULL check on the return value here.
-static inline luadb_lmdb_tx *check_mdb_txn(lua_State *L, int idx) {
+static inline LuaDB_LmdbTx *CheckLmdbTxParam(lua_State *L, int idx) {
     assert(L);
 
-    luadb_lmdb_tx *loc = luaL_checkudata(L, idx, LMDB_TX_REGISTRY_NAME);
+    LuaDB_LmdbTx *loc = luaL_checkudata(L, idx, LMDB_TX_REGISTRY_NAME);
 
     if (!loc) {
         luaL_error(L, "LMDB transaction not found");
@@ -881,7 +882,7 @@ static inline luadb_lmdb_tx *check_mdb_txn(lua_State *L, int idx) {
 
 // Clean up any lingering cursors and transactions before closing the
 // entire environment.
-static void clean_lmdb_env_reference_table(lua_State *L, char *uuid) {
+static void CleanLmdbEnvRefTable(lua_State *L, char *uuid) {
     assert(L);
     assert(uuid);
 
@@ -936,10 +937,10 @@ static void clean_lmdb_env_reference_table(lua_State *L, char *uuid) {
 
 // Create the reader lock table as a MDB_msg_func callback.
 //
-// Assumes it is being called by lmdb_env_readers and, thus,
+// Assumes it is being called by LmdbEnv_Readers and, thus,
 // that there is a table at the (1) index on the stack and
 // an index integer right above that.
-static int make_lmdb_env_reader_table(const char *msg, lua_State *L) {
+static int LmdbEnvReaderTableCreate(const char *msg, lua_State *L) {
     int idx = (int)luaL_checknumber(L, -1);
     lua_pushstring(L, msg);
     lua_settable(L, -3);
@@ -963,10 +964,10 @@ static int make_lmdb_env_reader_table(const char *msg, lua_State *L) {
 //     },
 //     ...
 // }
-static char *make_lmdb_env_reference_table(lua_State *L) {
+static char *CreateLmdbEnvRefTable(lua_State *L) {
     assert(L);
 
-    char *uuid = luadb_create_guid();
+    char *uuid = LuaDB_CreateGuid();
     if (!uuid) {
         return NULL;
     }
@@ -993,7 +994,7 @@ static char *make_lmdb_env_reference_table(lua_State *L) {
 // Add the given Transaction to the Weak Reference table for the
 // given environment. Use the idx to indicate where the Txn is on
 // the Lua stack.
-static void add_tx_to_reference_table(lua_State *L, MDB_env *env, MDB_txn *txn, int idx) {
+static void AddTxToLmdbEnvRefTable(lua_State *L, MDB_env *env, MDB_txn *txn, int idx) {
     assert(L);
     assert(txn);
 
@@ -1039,7 +1040,7 @@ static void add_tx_to_reference_table(lua_State *L, MDB_env *env, MDB_txn *txn, 
 // Remove the given Transaction from the Weak Reference table for
 // the given environment. Use the idx to indicate where the Txn userdata
 // is on the Lua stack.
-static void remove_tx_from_reference_table(lua_State *L, MDB_env *env, MDB_txn *txn, int idx) {
+static void RemoveTxFromLmdbEnvRefTable(lua_State *L, MDB_env *env, MDB_txn *txn, int idx) {
     assert(L);
     assert(txn);
 
@@ -1068,7 +1069,7 @@ static void remove_tx_from_reference_table(lua_State *L, MDB_env *env, MDB_txn *
 // Concatenate all of the variadic Lua parameters into a single key and
 // return that (and length). Note that all parameters between `idx` and
 // `last` will be considered as string keys.
-static char *get_lmdb_key(lua_State *L, size_t *len, int idx, int last) {
+static char *GetLmdbKeyFromLua(lua_State *L, size_t *len, int idx, int last) {
     assert(L);
     int elems = last - idx + 1;
     const char *keys[elems];
@@ -1113,7 +1114,7 @@ static char *get_lmdb_key(lua_State *L, size_t *len, int idx, int last) {
     }
 
     int err;
-    char *tkey = generate_luadb_key(&err, len, keys, lens, types, elems);
+    char *tkey = GenerateLuaDbKey(&err, len, keys, lens, types, elems);
     if (err) {
         luaL_error(L, "could not allocate memory for key");
         return NULL;
@@ -1133,7 +1134,7 @@ static char *get_lmdb_key(lua_State *L, size_t *len, int idx, int last) {
 //     { ... },
 //     { ... }
 // }
-static char *generate_luadb_key(int *err, size_t *len, const char **keys, size_t *lens, char *types, int elems) {
+static char *GenerateLuaDbKey(int *err, size_t *len, const char **keys, size_t *lens, char *types, int elems) {
     char *tkey = NULL;
     *err = 0;
 
@@ -1161,7 +1162,7 @@ static char *generate_luadb_key(int *err, size_t *len, const char **keys, size_t
 //
 // The return value is merely the pointer offset within the given
 // key value, so the caller should NOT free this value.
-static const char *next_luadb_key_segment(const char *key, size_t keylen, size_t pfxlen, size_t *len, int *type) {
+static const char *NextKeySegment(const char *key, size_t keylen, size_t pfxlen, size_t *len, int *type) {
     if (pfxlen >= keylen) { return NULL; }
     *len = (size_t)key[pfxlen];
     *type = (int)key[pfxlen+1];
@@ -1171,12 +1172,12 @@ static const char *next_luadb_key_segment(const char *key, size_t keylen, size_t
 // Accept a generic type of data, scan it into a value, and push
 // that value onto the stack. Note that the type specified by the
 // `type` parameter refers to the LMDB type, not the LUA_T* values.
-static int push_type(lua_State *L, const char *val, size_t len, int type) {
+static bool PushValueByType(lua_State *L, const char *val, size_t len, int type) {
     // Determine which data type to push back onto the stack
     switch(type) {
         case LMDB_STRING_CHAR:
             lua_pushlstring(L, val, len);
-            return 1;
+            return true;
         case LMDB_NUMERIC_CHAR: {
             lua_Number f;
 #ifdef _WIN32
@@ -1185,7 +1186,7 @@ static int push_type(lua_State *L, const char *val, size_t len, int type) {
             sscanf(val, "%lf", &f);
 #endif
             lua_pushnumber(L, f);
-            return 1;
+            return true;
         }
         case LMDB_INTEGER_CHAR: {
             lua_Integer i;
@@ -1195,7 +1196,7 @@ static int push_type(lua_State *L, const char *val, size_t len, int type) {
             sscanf(val, "%lld", &i);
 #endif
             lua_pushinteger(L, i);
-            return 1;
+            return true;
         }
         case LMDB_BOOLEAN_CHAR: {
             int b;
@@ -1205,18 +1206,18 @@ static int push_type(lua_State *L, const char *val, size_t len, int type) {
             sscanf(val, "%d", &b);
 #endif
             lua_pushboolean(L, b);
-            return 1;
+            return true;
         }
         default:
-            return 0;
+            return false;
     }
 }
 
 // Emulate the $ORDER function from MUMPS. Iterate over the keys in
 // key order, using prefix comparison to verify that we're only ever
 // considering "child" nodes.
-static int order_tx(lua_State *L) {
-    luadb_lmdb_order *cur = luaL_checkudata(L, lua_upvalueindex(1),
+static int LuaDbOrderTxClosure(lua_State *L) {
+    LuaDB_LmdbOrder *cur = luaL_checkudata(L, lua_upvalueindex(1),
                                             LMDB_CURSOR_REGISTRY_NAME);
 
     if (!cur) {
@@ -1250,12 +1251,12 @@ static int order_tx(lua_State *L) {
     // Get the next value and push it onto the Lua stack
     size_t len;
     int type;
-    const char *seg = next_luadb_key_segment((char *)key.mv_data, key.mv_size,
-                                             cur->pfxlen, &len, &type);
+    const char *seg = NextKeySegment((char *) key.mv_data, key.mv_size,
+                                     cur->pfxlen, &len, &type);
     if (!seg) { return 0; }
 
     // Push the generic value onto the stack
-    if (!push_type(L, seg, len, type)) { return 0; }
+    if (!PushValueByType(L, seg, len, type)) { return 0; }
 
     // Move to the next element continuously now
     cur->op = MDB_NEXT;
@@ -1263,7 +1264,7 @@ static int order_tx(lua_State *L) {
 }
 
 // Create the metatable for LMDB Environment objects.
-static int make_lmdb_env_metatable(lua_State *L) {
+static bool CreateLmdbEnvMetatable(lua_State *L) {
     assert(L);
 
     // Verify we'll have enough memory
@@ -1279,11 +1280,11 @@ static int make_lmdb_env_metatable(lua_State *L) {
 
     // Attach the methods to this table
     luaL_setfuncs(L, lmdb_env_methods, 0);
-    return 1;
+    return true;
 }
 
 // Create the metatable for LMDB Tx objects
-static int make_lmdb_tx_metatable(lua_State *L) {
+static bool CreateLmdbTxMetatable(lua_State *L) {
     assert(L);
 
     // Verify we'll have enough memory
@@ -1299,11 +1300,11 @@ static int make_lmdb_tx_metatable(lua_State *L) {
 
     // Attach the methods to this table
     luaL_setfuncs(L, lmdb_tx_methods, 0);
-    return 1;
+    return true;
 }
 
 // Create the metatable for LMDB Cursor objects
-static int make_lmdb_cursor_metatable(lua_State *L) {
+static bool CreateLmdbCursorMetatable(lua_State *L) {
     assert(L);
 
     // Verify we'll have enough memory
@@ -1319,5 +1320,5 @@ static int make_lmdb_cursor_metatable(lua_State *L) {
 
     // Attach the methods to this table
     luaL_setfuncs(L, lmdb_cursor_methods, 0);
-    return 1;
+    return true;
 }

@@ -14,17 +14,17 @@
 /**
  * @brief Add the UUID library to the global Lua state.
  */
-void luadb_add_uuid_lib(lua_State *L);
+void LuaDB_UuidAddLib(lua_State *L);
 
 /**
  * @brief Create a new UUID value.
  */
-int luadb_uuid_uuid(lua_State *L);
+int LuaDB_UuidUuid(lua_State *L);
 
 /**
  * @brief Create a new UUID value. Callers are responsible for freeing the
  * returned value.
  */
-char *luadb_create_guid();
+char *LuaDB_CreateGuid();
 
 #endif //LUADB_UUID_H

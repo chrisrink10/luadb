@@ -9,10 +9,10 @@
  *****************************************************************************/
 
 #include <assert.h>
-#include <string.h>
-#include <stdlib.h>
 #include <libgen.h>
+#include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "deps/lua/lua.h"
 #include "deps/lua/lualib.h"
@@ -34,35 +34,33 @@ static const char *const PATH_SEPARATOR = "/";
  * FORWARD DECLARATIONS
  */
 
-static char *append_luadb_path(const char *cur_path, size_t len,
-                               const char *path, bool truncate);
-static void update_lua_package_path(lua_State *L, const char *path,
-                                    bool truncate);
+static char *AppendLuaDbPath(const char *cur_path, size_t len, const char *path, bool truncate);
+static void UpdateLuaPackagePath(lua_State *L, const char *path, bool truncate);
 
 /*
  * FORWARD DECLARATIONS
  */
 
-lua_State *luadb_new_state() {
+lua_State *LuaDB_NewState() {
     lua_State *L = luaL_newstate();
     if (!L) {
         return NULL;
     }
 
     luaL_openlibs(L);
-    luadb_add_json_lib(L);
-    luadb_add_lmdb_lib(L);
-    luadb_add_uuid_lib(L);
+    LuaDB_JsonAddLib(L);
+    LuaDB_LmdbAddLib(L);
+    LuaDB_UuidAddLib(L);
 
     return L;
 }
 
-void luadb_add_relative_path(lua_State *L, const char *path) {
-    update_lua_package_path(L, path, true);
+void LuaDB_PathAddRelative(lua_State *L, const char *path) {
+    UpdateLuaPackagePath(L, path, true);
 }
 
-void luadb_add_absolute_path(lua_State *L, const char *path) {
-    update_lua_package_path(L, path, false);
+void LuaDB_PathAddAbsolute(lua_State *L, const char *path) {
+    UpdateLuaPackagePath(L, path, false);
 }
 
 /*
@@ -72,7 +70,7 @@ void luadb_add_absolute_path(lua_State *L, const char *path) {
 // Add the given path to the Lua global `package.path`.
 //
 // If `truncate` is specified, take a relative path from the given path.
-static void update_lua_package_path(lua_State *L, const char *path, bool truncate) {
+static void UpdateLuaPackagePath(lua_State *L, const char *path, bool truncate) {
     assert(L);
     assert(path);
 
@@ -83,7 +81,7 @@ static void update_lua_package_path(lua_State *L, const char *path, bool truncat
     const char *cur_path = lua_tolstring(L, -1, &len);
 
     // Get the directory path
-    char *newpath = append_luadb_path(cur_path, len, path, truncate);
+    char *newpath = AppendLuaDbPath(cur_path, len, path, truncate);
     if (!newpath) {
         return;
     }
@@ -102,8 +100,7 @@ static void update_lua_package_path(lua_State *L, const char *path, bool truncat
 //
 // If truncate is specified, use `dirname` to truncate the
 // given `path` down one level.
-static char *append_luadb_path(const char *cur_path, size_t len,
-                               const char *path, bool truncate) {
+static char *AppendLuaDbPath(const char *cur_path, size_t len, const char *path, bool truncate) {
     // Create a copy of path, since dirname may modify the output
     size_t pathlen = strlen(path);
     char *pathcpy = malloc(pathlen + 1);

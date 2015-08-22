@@ -31,13 +31,13 @@
  * FORWARD DECLARATIONS
  */
 
-static char *create_uuid_uuid();
-static char *create_uuid_win32();
-static char *create_uuid_rand();
+static char *UuidLibUuidCreate();
+static char *Win32UuidCreate();
+static char *RandUuidCreate();
 
 // Library functions
 static luaL_Reg uuid_lib_funcs[] = {
-        { "uuid", luadb_uuid_uuid },
+        { "uuid", LuaDB_UuidUuid},
         { NULL, NULL },
 };
 
@@ -45,15 +45,15 @@ static luaL_Reg uuid_lib_funcs[] = {
  * PUBLIC FUNCTIONS
  */
 
-void luadb_add_uuid_lib(lua_State *L) {
+void LuaDB_UuidAddLib(lua_State *L) {
     assert(L);
 
     luaL_newlib(L, uuid_lib_funcs);
     lua_setglobal(L, "uuid");
 }
 
-int luadb_uuid_uuid(lua_State *L) {
-    char *uuid = luadb_create_guid();
+int LuaDB_UuidUuid(lua_State *L) {
+    char *uuid = LuaDB_CreateGuid();
     if (!uuid) {
         lua_pushnil(L);
         return 1;
@@ -64,14 +64,14 @@ int luadb_uuid_uuid(lua_State *L) {
     return 1;
 }
 
-char *luadb_create_guid() {
+char *LuaDB_CreateGuid() {
 #ifdef LUADB_USE_UUID
-    return create_uuid_uuid();
+    return UuidLibUuidCreate();
 #else  //LUADB_USE_UUID
     #ifdef _WIN32
-    return create_uuid_win32();
+    return Win32UuidCreate();
     #else  //_WIN32
-    return create_uuid_rand();
+    return RandUuidCreate();
     #endif //_WIN32
 #endif //LUADB_USE_UUID
 }
@@ -81,7 +81,7 @@ char *luadb_create_guid() {
  */
 
 // Create a UUID using uuid.h defined on most *NIX systems.
-static char *create_uuid_uuid() {
+static char *UuidLibUuidCreate() {
 #ifdef LUADB_USE_UUID
     char *out = malloc(UUID_STR_SIZE + 1);
     if (!out) {
@@ -99,7 +99,7 @@ static char *create_uuid_uuid() {
 }
 
 // Create a UUID using the Windows API.
-static char *create_uuid_win32() {
+static char *Win32UuidCreate() {
 #ifdef _WIN32
     char *out = malloc((sizeof(GUID) * 2) + 1);
     if (!out) {
@@ -124,7 +124,7 @@ static char *create_uuid_win32() {
 }
 
 // Create a "UUID" using the rand() function from the C math library.
-static char *create_uuid_rand() {
+static char *RandUuidCreate() {
     char *out = malloc(RAND_MAX);
     if (!out) {
         return NULL;

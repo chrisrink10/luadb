@@ -14,7 +14,7 @@
 /**
  * @brief Add the JSON library to the global Lua state.
  */
-void luadb_add_json_lib(lua_State *L);
+void LuaDB_JsonAddLib(lua_State *L);
 
 /**
  * @brief C function for the Lua "json.decode(...)".
@@ -23,7 +23,7 @@ void luadb_add_json_lib(lua_State *L);
  * are decoded as tables. Arrays are decoded as 1-indexed tables.
  * All other values are converted to their natural Lua equivalents.
  */
-int luadb_json_decode(lua_State *L);
+int LuaDB_JsonDecode(lua_State *L);
 
 /**
  * @brief C function for the Lua "json.encode(...)".
@@ -41,7 +41,7 @@ int luadb_json_decode(lua_State *L);
  * Attempting to encode a value which would produce a reference
  * cycle will produce a Lua error.
  */
-int luadb_json_encode(lua_State *L);
+int LuaDB_JsonEncode(lua_State *L);
 
 /**
  * @brief C function for the Lua "json.isarray(...)"
@@ -50,7 +50,7 @@ int luadb_json_encode(lua_State *L);
  * table possesses the metafield "_json_array". Returns
  * `false` otherwise.
  */
-int luadb_json_isarray(lua_State *L);
+int LuaDB_JsonIsArray(lua_State *L);
 
 /**
  * @brief C function for the Lua "json.makearray(...)"
@@ -59,6 +59,6 @@ int luadb_json_isarray(lua_State *L);
  * if it is a table. Produces an error if the argument is not
  * a table.
  */
-int luadb_json_makearray(lua_State *L);
+int LuaDB_JsonMakeArray(lua_State *L);
 
 #endif //LUADB_JSON_H

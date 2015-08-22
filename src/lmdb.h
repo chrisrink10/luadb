@@ -14,16 +14,16 @@
 /**
  * @brief Add the LMDB library to the global Lua state.
  */
-void luadb_add_lmdb_lib(lua_State *L);
+void LuaDB_LmdbAddLib(lua_State *L);
 
 /**
  * @brief Create a new LMDB transaction.
  */
-int luadb_lmdb_open_env(lua_State *L);
+int LuaDB_LmdbOpenEnv(lua_State *L);
 
 /**
  * @brief Return the version number of LMDB that LuaDB was compiled with.
  */
-int luadb_lmdb_version(lua_State *L);
+int LuaDB_LmdbVersion(lua_State *L);
 
 #endif //LUADB_LMDB_H

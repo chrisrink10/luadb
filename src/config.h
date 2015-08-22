@@ -21,20 +21,20 @@ typedef struct LuaDB_Setting {
     size_t len;
 } LuaDB_Setting;
 
-typedef struct LuaDB_Env_Config {
+typedef struct LuaDB_EnvConfig {
     LuaDB_Setting root;
     LuaDB_Setting router;
     LuaDB_Setting fcgi_query;
-} LuaDB_Env_Config;
+} LuaDB_EnvConfig;
 
 /**
  * @brief Read in any environment settings into the given structure.
  */
-int luadb_read_environment_config(LuaDB_Env_Config *config);
+bool LuaDB_ReadEnvironmentConfig(LuaDB_EnvConfig *config);
 
 /**
  * @brief
  */
-void luadb_clean_environment_config(LuaDB_Env_Config *config);
+void LuaDB_CleanEnvironmentConfig(LuaDB_EnvConfig *config);
 
 #endif //LUADB_CONFIG_H

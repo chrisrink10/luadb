@@ -28,27 +28,28 @@ static const char *const LUADB_CONFIG_DEFAULT_FCGI_QUERY_STRING = "QUERY_STRING"
  * FORWARD DECLARATIONS
  */
 
-static int load_config(lua_State *L, LuaDB_Env_Config *config);
+static bool LoadConfigFromLua(lua_State *L, LuaDB_EnvConfig *config);
 
 /*
  * PUBLIC FUNCTIONS
  */
 
 // Read the environment configuration file into a struct.
-int luadb_read_environment_config(LuaDB_Env_Config *config) {
+bool LuaDB_ReadEnvironmentConfig(LuaDB_EnvConfig *config) {
     assert(config);
 
     // Create the new filename
-    char *cfgfile = luadb_path_join(LUADB_CONFIG_FOLDER, LUADB_DEFAULT_CONFIG_FILE);
+    char *cfgfile = LuaDB_PathJoin(LUADB_CONFIG_FOLDER,
+                                   LUADB_DEFAULT_CONFIG_FILE);
     if (!cfgfile) {
-        return 0;
+        return false;
     }
 
     // Spawn a quick Lua state to read the file
-    lua_State *L = luadb_new_state();
+    lua_State *L = LuaDB_NewState();
     if (!L) {
         free(cfgfile);
-        return 0;
+        return false;
     }
 
     // Read in our configuration file
@@ -56,21 +57,21 @@ int luadb_read_environment_config(LuaDB_Env_Config *config) {
     if (err) {
         free(cfgfile);
         lua_close(L);
-        return 0;
+        return false;
     }
 
     // Read in the configuration options
-    if (!load_config(L, config)) {
+    if (!LoadConfigFromLua(L, config)) {
         lua_close(L);
-        return 0;
+        return false;
     }
 
     lua_close(L);
-    return 1;
+    return true;
 }
 
 // Clean up any strings saved in the environment configuration.
-void luadb_clean_environment_config(LuaDB_Env_Config *config) {
+void LuaDB_CleanEnvironmentConfig(LuaDB_EnvConfig *config) {
     assert(config);
 
     free(config->root.val);
@@ -83,7 +84,7 @@ void luadb_clean_environment_config(LuaDB_Env_Config *config) {
  */
 
 // Load the configuration files from the environment
-static int load_config(lua_State *L, LuaDB_Env_Config *config) {
+static bool LoadConfigFromLua(lua_State *L, LuaDB_EnvConfig *config) {
     assert(L);
     assert(config);
 
@@ -92,11 +93,11 @@ static int load_config(lua_State *L, LuaDB_Env_Config *config) {
     if (lua_gettable(L, -2) != LUA_TNIL) {
         size_t rootlen;
         const char *root = luaL_tolstring(L, -1, &rootlen);
-        config->root.val = luadb_strndup(root, rootlen);
+        config->root.val = LuaDB_StrDupLen(root, rootlen);
         config->root.len = rootlen;
         lua_pop(L, 2);
     } else {
-        config->root.val = luadb_strdup(LUADB_WEB_ROOT);
+        config->root.val = LuaDB_StrDup(LUADB_WEB_ROOT);
         config->root.len = strlen(LUADB_WEB_ROOT);
     }
 
@@ -104,14 +105,16 @@ static int load_config(lua_State *L, LuaDB_Env_Config *config) {
     if (lua_gettable(L, -2) != LUA_TNIL) {
         size_t routerlen;
         const char *router = luaL_tolstring(L, -1, &routerlen);
-        config->router.val = luadb_path_njoin(config->root.val, config->root.len,
-                                              router, routerlen);
+        config->router.val = LuaDB_PathJoinLen(config->root.val,
+                                               config->root.len,
+                                               router, routerlen);
         config->router.len = routerlen;
         lua_pop(L, 2);
     } else {
-        config->router.val = luadb_path_njoin(config->root.val, config->root.len,
-                                              LUADB_CONFIG_DEFAULT_ROUTER,
-                                              strlen(LUADB_CONFIG_DEFAULT_ROUTER));
+        config->router.val = LuaDB_PathJoinLen(config->root.val,
+                                               config->root.len,
+                                               LUADB_CONFIG_DEFAULT_ROUTER,
+                                               strlen(LUADB_CONFIG_DEFAULT_ROUTER));
         config->router.len = strlen(config->router.val);
     }
 
@@ -119,13 +122,14 @@ static int load_config(lua_State *L, LuaDB_Env_Config *config) {
     if (lua_gettable(L, -2) != LUA_TNIL) {
         size_t paramlen;
         const char *fcgi_query = luaL_tolstring(L, -1, &paramlen);
-        config->fcgi_query.val = luadb_strndup(fcgi_query, paramlen);
+        config->fcgi_query.val = LuaDB_StrDupLen(fcgi_query, paramlen);
         config->fcgi_query.len = paramlen;
         lua_pop(L, 2);
     } else {
-        config->fcgi_query.val = luadb_strdup(LUADB_CONFIG_DEFAULT_FCGI_QUERY_STRING);
+        config->fcgi_query.val = LuaDB_StrDup(
+                LUADB_CONFIG_DEFAULT_FCGI_QUERY_STRING);
         config->fcgi_query.len = strlen(LUADB_CONFIG_DEFAULT_FCGI_QUERY_STRING);
     }
 
-    return 1;
+    return true;
 }

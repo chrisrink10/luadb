@@ -27,18 +27,18 @@ static const char *const PATH_SEPARATOR = "/";
 #define ENDS_WITH_SEP(str, strlen) (str[strlen-1] == PATH_SEPARATOR[0])
 #define REMAINDER_LEN(iter, field) (iter->qslen - (field - iter->qs))
 
-static char decode_hex(char hex[2]);
-static int hex_to_decimal(char hex);
+static char HexToAscii(char *hex);
+static int HexDigitToDecimal(char hex);
 
 /*
  * PUBLIC FUNCTIONS
  */
 
-char *luadb_path_join(const char *x, const char *y) {
-    return luadb_path_njoin(x, strlen(x), y, strlen(y));
+char *LuaDB_PathJoin(const char *x, const char *y) {
+    return LuaDB_PathJoinLen(x, strlen(x), y, strlen(y));
 }
 
-char *luadb_path_njoin(const char *x, size_t xlen, const char *y, size_t ylen) {
+char *LuaDB_PathJoinLen(const char *x, size_t xlen, const char *y, size_t ylen) {
     int hassep = ENDS_WITH_SEP(x, xlen);
     size_t len = xlen + ylen + (hassep ? 1 : 2);
     char *path = malloc(len);
@@ -50,7 +50,7 @@ char *luadb_path_njoin(const char *x, size_t xlen, const char *y, size_t ylen) {
     return path;
 }
 
-void luadb_init_query_iter(luadb_query_iter *iter, const char* qs, size_t *len) {
+void LuaDB_QueryIterInit(LuaDB_QueryIter *iter, const char *qs, size_t *len) {
     assert(iter);
     if (!qs) { return; }
 
@@ -63,7 +63,7 @@ void luadb_init_query_iter(luadb_query_iter *iter, const char* qs, size_t *len) 
     iter->vallen = 0;
 }
 
-bool luadb_next_query_field(luadb_query_iter *iter) {
+bool LuaDB_QueryIterNext(LuaDB_QueryIter *iter) {
     // Verify we have an iterator and we've not gone past the end
     if (!iter || !iter->cur || iter->cur[0] == '\0') {
         return false;
@@ -123,7 +123,7 @@ bool luadb_next_query_field(luadb_query_iter *iter) {
     return true;
 }
 
-char *luadb_decode_query_str(const char *in, size_t inlen, size_t *outlen) {
+char *LuaDB_QueryStrDecode(const char *in, size_t inlen, size_t *outlen) {
     assert(outlen);
     *outlen = 0;
     if (!in) { return NULL; }
@@ -143,7 +143,7 @@ char *luadb_decode_query_str(const char *in, size_t inlen, size_t *outlen) {
                     hex[0] = in[i+1];
                     hex[1] = in[i+2];
                     i += 3;
-                    out[*outlen] = decode_hex(hex);
+                    out[*outlen] = HexToAscii(hex);
                     (*outlen)++;
                 }
                 break;
@@ -163,11 +163,11 @@ char *luadb_decode_query_str(const char *in, size_t inlen, size_t *outlen) {
     return out;
 }
 
-char *luadb_strdup(const char *in) {
-    return luadb_strndup(in, strlen(in));
+char *LuaDB_StrDup(const char *in) {
+    return LuaDB_StrDupLen(in, strlen(in));
 }
 
-char *luadb_strndup(const char *in, size_t n) {
+char *LuaDB_StrDupLen(const char *in, size_t n) {
     char *new = malloc(n + 1);
     if (!new) {
         return NULL;
@@ -183,13 +183,13 @@ char *luadb_strndup(const char *in, size_t n) {
  */
 
 // Decode a two digit hex code into a decimal value.
-static char decode_hex(char hex[2]) {
-    int val = ((hex_to_decimal(hex[0]) * 16) + (hex_to_decimal(hex[1])));
+static char HexToAscii(char *hex) {
+    int val = ((HexDigitToDecimal(hex[0]) * 16) + (HexDigitToDecimal(hex[1])));
     return (char)val;
 }
 
 // Convert a single hex digit into decimal.
-static int hex_to_decimal(char hex) {
+static int HexDigitToDecimal(char hex) {
     int v = -1;
     switch(hex) {
         case '0': v = 0; break;

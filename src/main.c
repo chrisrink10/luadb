@@ -39,22 +39,22 @@ static const int REPL_BUFFER_SIZE = 512;
 #endif
 
 // Print the short usage line
-static void print_usage(FILE *dest, const char *cmd) {
+static void PrintProgramUsage(FILE *dest, const char *cmd) {
     fprintf(dest, "usage: %s [-h] [-f] [-p port|device] [file]\n", cmd);
 }
 
 // Prints the name and destination of the file
-static void print_name_and_version(FILE *dest) {
+static void PrintNameAndVersion(FILE *dest) {
     fprintf(dest, "%s v%d.%d.%d %s\n", LUADB_NAME,
             LUADB_MAJOR_VERSION, LUADB_MINOR_VERSION,
             LUADB_PATCH_VERSION, LUADB_PATCH_STATUS);
 }
 
 // Print the LuaDB help to the given destination file
-static void print_help(FILE *dest, const char *cmd) {
-    print_usage(dest, cmd);
+static void PrintLuaDbHelp(FILE *dest, const char *cmd) {
+    PrintProgramUsage(dest, cmd);
     fprintf(dest, "\n");
-    print_name_and_version(dest);
+    PrintNameAndVersion(dest);
     fprintf(dest, "\n");
     fprintf(dest, "Options:\n");
     fprintf(dest, "  -p <port>, -p <dev>  start a FastCGI worker\n");
@@ -63,15 +63,15 @@ static void print_help(FILE *dest, const char *cmd) {
 }
 
 // Start the Lua REPL.
-static int start_repl(FILE *outdev, FILE *indev, FILE *errdev) {
+static int StartLuaRepl(FILE *outdev, FILE *indev, FILE *errdev) {
     int exit_code = EXIT_SUCCESS;
     char *buf = REPL_BUF_ALLOC();
 
     // Introduce ourselves...
-    print_name_and_version(outdev);
+    PrintNameAndVersion(outdev);
 
     // Open the Lua state
-    lua_State *L = luadb_new_state();
+    lua_State *L = LuaDB_NewState();
     if (!L) {
         fprintf(errdev, "%s: could not create Lua state\n", LUADB_EXEC);
         goto cleanup_repl;
@@ -101,14 +101,14 @@ cleanup_repl:
 }
 
 // Run a Lua script specified from the command line.
-static int run_script(const char *fname, FILE *outdev, FILE *indev, FILE *errdev) {
+static int RunLuaScript(const char *fname, FILE *outdev, FILE *indev, FILE *errdev) {
     int exit_code = EXIT_SUCCESS;
-    lua_State *L = luadb_new_state();
+    lua_State *L = LuaDB_NewState();
     if (!L) {
         fprintf(errdev, "%s: could not create Lua state\n", LUADB_EXEC);
         return EXIT_FAILURE;
     }
-    luadb_add_relative_path(L, fname);
+    LuaDB_PathAddRelative(L, fname);
 
     int err = luaL_dofile(L, fname);
     if (err) {
@@ -122,13 +122,13 @@ static int run_script(const char *fname, FILE *outdev, FILE *indev, FILE *errdev
 }
 
 // Start a FastCGI worker process, unless the user requests no fork.
-static int start_fcgi_worker(FILE *outdev, char *fcgi_dev, bool should_fork) {
+static int StartFcgiWorker(FILE *outdev, char *fcgi_dev, bool should_fork) {
 #ifdef _WIN32
-    return luadb_start_fcgi_worker(fcgi_dev);
+    return LuaDB_FcgiStartWorker(fcgi_dev);
 #else //_WIN32
     // Do not fork the process, as requested by the caller
     if (!should_fork) {
-        return luadb_start_fcgi_worker(fcgi_dev);
+        return LuaDB_FcgiStartWorker(fcgi_dev);
     }
 
     // Fork the process
@@ -138,7 +138,7 @@ static int start_fcgi_worker(FILE *outdev, char *fcgi_dev, bool should_fork) {
                 LUADB_EXEC);
         return EXIT_FAILURE;
     } else if (pid == 0) {
-        int exit_code = luadb_start_fcgi_worker(fcgi_dev);
+        int exit_code = LuaDB_FcgiStartWorker(fcgi_dev);
         _exit(exit_code);
     } else {
         return EXIT_SUCCESS;
@@ -147,7 +147,7 @@ static int start_fcgi_worker(FILE *outdev, char *fcgi_dev, bool should_fork) {
 }
 
 // Parse command line arguments
-static int parse_arguments(int argc, char *const argv[]) {
+static int ParseCommandLineArguments(int argc, char *const *const argv) {
     int exit_code = EXIT_SUCCESS;
     bool is_fcgi = false;
     bool should_fork = true;
@@ -159,7 +159,7 @@ static int parse_arguments(int argc, char *const argv[]) {
     while ((c = getopt (argc, argv, "fhp::")) != -1) {
         switch (c) {
             case 'h':
-                print_help(stdout, argv[0]);
+                PrintLuaDbHelp(stdout, argv[0]);
                 goto exit_main;
             case 'p':
                 fcgi_dev = (optarg) ? (optarg) : ":8000";
@@ -171,7 +171,7 @@ static int parse_arguments(int argc, char *const argv[]) {
             default:
                 fprintf(stderr, "%s: invalid option '%c' selected\n",
                         LUADB_EXEC, c);
-                print_usage(stdout, argv[0]);
+                PrintProgramUsage(stdout, argv[0]);
                 exit_code = EXIT_FAILURE;
                 goto exit_main;
         }
@@ -179,7 +179,7 @@ static int parse_arguments(int argc, char *const argv[]) {
 
     // Start the FastCGI (maybe) daemon
     if (is_fcgi) {
-        exit_code = start_fcgi_worker(stdout, fcgi_dev, should_fork);
+        exit_code = StartFcgiWorker(stdout, fcgi_dev, should_fork);
         goto exit_main;
     }
 
@@ -191,9 +191,9 @@ static int parse_arguments(int argc, char *const argv[]) {
     // With no filename given, we can start the REPL, otherwise
     // run that script
     if (!fname) {
-        exit_code = start_repl(stdout, stdin, stderr);
+        exit_code = StartLuaRepl(stdout, stdin, stderr);
     } else {
-        exit_code = run_script(fname, stdout, stdin, stderr);
+        exit_code = RunLuaScript(fname, stdout, stdin, stderr);
     }
 
 exit_main:
@@ -201,5 +201,5 @@ exit_main:
 }
 
 int main(int argc, char *const argv[]) {
-    return parse_arguments(argc, argv);
+    return ParseCommandLineArguments(argc, argv);
 }

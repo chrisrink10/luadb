@@ -15,13 +15,13 @@
  * @brief Create a new @c lua_State object instantiated with
  * the correct LuaDB libraries in the namespace.
  */
-lua_State *luadb_new_state();
+lua_State *LuaDB_NewState();
 
 /**
  * @brief Add the given path to the Lua `package.path` global exactly
  * as it is given.
  */
-void luadb_add_absolute_path(lua_State *L, const char *path);
+void LuaDB_PathAddAbsolute(lua_State *L, const char *path);
 
 /**
  * @brief Add the relative path of the file specified (so that files
@@ -31,6 +31,6 @@ void luadb_add_absolute_path(lua_State *L, const char *path);
  * this function will select directories such as "/var/www" from even
  * fully qualified directory paths (e.g. "/var/www/luadb/").
  */
-void luadb_add_relative_path(lua_State *L, const char *path);
+void LuaDB_PathAddRelative(lua_State *L, const char *path);
 
 #endif //LUADB_STATE_H

@@ -30,20 +30,20 @@ static const int JSON_STRING_KEY_DIGITS = 15;
  * FORWARD DECLARATIONS
  */
 
-static inline void json_to_lua_value(lua_State *L, JsonNode *json);
-static JsonNode *lua_value_to_json(lua_State *L);
-static void json_to_lua_value_private(lua_State *L, JsonNode *json, int i);
-static inline void set_table_as_json_array(lua_State *L, int idx);
-static JsonNode *lua_table_to_json_private(lua_State *L, int idx);
-static bool lua_number_is_int(lua_Number n, int *v);
-static inline bool lua_table_is_json_array(lua_State *L, int idx);
+static inline void JsonToLuaValue(lua_State *L, JsonNode *json);
+static JsonNode *LuaValueToJson(lua_State *L);
+static void JsonToLuaValuePrivate(lua_State *L, JsonNode *json, int i);
+static inline void SetTableAsJsonArray(lua_State *L, int idx);
+static JsonNode *LuaTableToJsonPrivate(lua_State *L, int idx);
+static bool LuaNumberIsInt(lua_Number n, int *v);
+static inline bool LuaTableIsJsonArray(lua_State *L, int idx);
 
 // Library functions
 static luaL_Reg json_lib_funcs[] = {
-        { "decode", luadb_json_decode },
-        { "encode", luadb_json_encode },
-        { "isarray", luadb_json_isarray },
-        { "makearray", luadb_json_makearray },
+        { "decode", LuaDB_JsonDecode},
+        { "encode", LuaDB_JsonEncode},
+        { "isarray", LuaDB_JsonIsArray},
+        { "makearray", LuaDB_JsonMakeArray},
         { NULL, NULL },
 };
 
@@ -51,14 +51,14 @@ static luaL_Reg json_lib_funcs[] = {
  * PUBLIC FUNCTIONS
  */
 
-void luadb_add_json_lib(lua_State *L) {
+void LuaDB_JsonAddLib(lua_State *L) {
     assert(L);
 
     luaL_newlib(L, json_lib_funcs);
     lua_setglobal(L, "json");
 }
 
-int luadb_json_decode(lua_State *L) {
+int LuaDB_JsonDecode(lua_State *L) {
     size_t len;
     const char *str = luaL_checklstring(L, 1, &len);
 
@@ -68,13 +68,13 @@ int luadb_json_decode(lua_State *L) {
         return 1;
     }
 
-    json_to_lua_value(L, json);
+    JsonToLuaValue(L, json);
     json_delete(json);
     return 1;
 }
 
-int luadb_json_encode(lua_State *L) {
-    JsonNode *json = lua_value_to_json(L);
+int LuaDB_JsonEncode(lua_State *L) {
+    JsonNode *json = LuaValueToJson(L);
     char *str = json_encode(json);
     if (!str) {
         free(json);
@@ -88,26 +88,26 @@ int luadb_json_encode(lua_State *L) {
     return 1;
 }
 
-int luadb_json_isarray(lua_State *L) {
+int LuaDB_JsonIsArray(lua_State *L) {
     int istable = lua_istable(L, 1);
     if (!istable) {
         lua_pushboolean(L, 0);
         return 1;
     }
 
-    int isarray = (int)lua_table_is_json_array(L, 1);
+    int isarray = (int) LuaTableIsJsonArray(L, 1);
     lua_pushboolean(L, isarray);
     return 1;
 }
 
-int luadb_json_makearray(lua_State *L) {
+int LuaDB_JsonMakeArray(lua_State *L) {
     int istable = lua_istable(L, 1);
     if (!istable) {
         luaL_error(L, "can only make tables into JSON arrays");
         return 0;
     }
 
-    set_table_as_json_array(L, 1);
+    SetTableAsJsonArray(L, 1);
     return 0;
 }
 
@@ -116,15 +116,15 @@ int luadb_json_makearray(lua_State *L) {
  */
 
 // Convert a JsonNode structure into a Lua value.
-static inline void json_to_lua_value(lua_State *L, JsonNode *json) {
+static inline void JsonToLuaValue(lua_State *L, JsonNode *json) {
     assert(L);
     assert(json);
 
-    json_to_lua_value_private(L, json, 1);
+    JsonToLuaValuePrivate(L, json, 1);
 }
 
 // Convert a Lua value into a JsonNode structure.
-static JsonNode *lua_value_to_json(lua_State *L) {
+static JsonNode *LuaValueToJson(lua_State *L) {
     assert(L);
 
     JsonNode *json = NULL;
@@ -133,7 +133,7 @@ static JsonNode *lua_value_to_json(lua_State *L) {
 
     switch (type) {
         case LUA_TTABLE:
-            json = lua_table_to_json_private(L, top);
+            json = LuaTableToJsonPrivate(L, top);
             break;
         case LUA_TSTRING:
             json = json_mkstring(luaL_tolstring(L, top, NULL));
@@ -163,7 +163,7 @@ static JsonNode *lua_value_to_json(lua_State *L) {
 // Private function to convert a JsonNode into a Lua table which
 // can be called recursively for JSON arrays and objects and
 // will handle array indices (1-indexed, as in Lua).
-static void json_to_lua_value_private(lua_State *L, JsonNode *json, int i) {
+static void JsonToLuaValuePrivate(lua_State *L, JsonNode *json, int i) {
     assert(L);
     assert(json);
 
@@ -193,14 +193,14 @@ static void json_to_lua_value_private(lua_State *L, JsonNode *json, int i) {
         case JSON_OBJECT:
             lua_newtable(L);
             json_foreach(child, json) {
-                json_to_lua_value_private(L, child, 1);
+                JsonToLuaValuePrivate(L, child, 1);
             }
             break;
         case JSON_ARRAY:
             lua_newtable(L);
-            set_table_as_json_array(L, lua_gettop(L));
+            SetTableAsJsonArray(L, lua_gettop(L));
             json_foreach(child, json) {
-                json_to_lua_value_private(L, child, i++);
+                JsonToLuaValuePrivate(L, child, i++);
             }
             break;
         case JSON_STRING:
@@ -225,7 +225,7 @@ static void json_to_lua_value_private(lua_State *L, JsonNode *json, int i) {
 
 // Set the value at the top of the stack as a JSON array
 // by way of marking it with the meta-field _json_array
-static inline void set_table_as_json_array(lua_State *L, int idx) {
+static inline void SetTableAsJsonArray(lua_State *L, int idx) {
     luaL_checkstack(L, 3, "out of memory");
     if (!lua_getmetatable(L, idx)) {
         lua_createtable(L, 0, 1);
@@ -237,7 +237,7 @@ static inline void set_table_as_json_array(lua_State *L, int idx) {
 }
 
 // Convert a Lua table (ONLY) to JsonNode structure.
-static JsonNode *lua_table_to_json_private(lua_State *L, int idx) {
+static JsonNode *LuaTableToJsonPrivate(lua_State *L, int idx) {
     assert(L);
 
     JsonNode *json;
@@ -251,7 +251,7 @@ static JsonNode *lua_table_to_json_private(lua_State *L, int idx) {
     luaL_checkstack(L, 2, "out of memory");
 
     // Decide whether or not we're creating an array
-    bool as_array = lua_table_is_json_array(L, idx);
+    bool as_array = LuaTableIsJsonArray(L, idx);
     json = (as_array) ? json_mkarray() : json_mkobject();
 
     // Traverse the Lua table
@@ -264,7 +264,7 @@ static JsonNode *lua_table_to_json_private(lua_State *L, int idx) {
         switch (ktype) {
             case LUA_TNUMBER:
                 num = lua_tonumber(L, idx+1);
-                if (lua_number_is_int(num, &inum)) {
+                if (LuaNumberIsInt(num, &inum)) {
                     sprintf(numstr, "%d", inum);
                 } else {
                     sprintf(numstr, "%f", num);
@@ -273,7 +273,7 @@ static JsonNode *lua_table_to_json_private(lua_State *L, int idx) {
                 break;
             case LUA_TSTRING:
                 orig = luaL_tolstring(L, idx+1, &len);
-                key = luadb_strndup(orig, len);
+                key = LuaDB_StrDupLen(orig, len);
                 lua_pop(L, 1);
                 break;
             default:
@@ -283,7 +283,7 @@ static JsonNode *lua_table_to_json_private(lua_State *L, int idx) {
         }
 
         // Generate the child node
-        JsonNode *child = lua_value_to_json(L);
+        JsonNode *child = LuaValueToJson(L);
 
         // Pop the value off the stack
         lua_pop(L, 1);
@@ -300,13 +300,13 @@ static JsonNode *lua_table_to_json_private(lua_State *L, int idx) {
 }
 
 // Check if a Lua number is integral and return that value in v if so.
-static bool lua_number_is_int(lua_Number n, int *v) {
+static bool LuaNumberIsInt(lua_Number n, int *v) {
     *v = (int)n;
     return ((n - (double)*v) == 0.0);
 }
 
 // Return true if the value at the given index is considered a JSON array.
-static inline bool lua_table_is_json_array(lua_State *L, int idx) {
+static inline bool LuaTableIsJsonArray(lua_State *L, int idx) {
     bool is_array = (luaL_getmetafield(L, idx, JSON_ARRAY_METAFIELD) != LUA_TNIL);
     if (is_array) { lua_pop(L, 1); }
     return is_array;

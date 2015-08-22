@@ -14,6 +14,6 @@
 /**
  * @brief Start a LuaDB FastCGI worker.
  */
-int luadb_start_fcgi_worker(const char *path);
+int LuaDB_FcgiStartWorker(const char *path);
 
 #endif //LUADB_FCGI_H
