@@ -23,6 +23,10 @@ Follow these steps to compile LuaDB:
 * Enter the command `make`.
 
 ### Windows
+For now, Windows is not a target platform for LuaDB. As such, we will make
+no guarantees that it will compile successfully under Windows. That said,
+you are welcome to try.
+
 Windows will require [mingw64](http://mingw-w64.yaxm.org/doku.php) in
 order to compile for Windows. Note that you may need to add the MinGW `bin`
 directory to your environment variable `%path%`.
@@ -32,7 +36,6 @@ Once you have installed MinGW, follow the steps below:
 * Generate MinGW Makefiles with CMake GUI.
 * Open `cmd` to the project build location specified in CMake.
 * Type `mingw32-make`.
-* There may be a few warnings, but LuaDB should compile.
 
 ## Configuration
 LuaDB environment configuration is specified via configuration files
