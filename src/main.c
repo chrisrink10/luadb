@@ -40,7 +40,11 @@ static const int REPL_BUFFER_SIZE = 512;
 
 // Print the short usage line
 static void PrintProgramUsage(FILE *dest, const char *cmd) {
+#ifndef _WIN32
     fprintf(dest, "usage: %s [-h] [-f] [-p port|device] [file]\n", cmd);
+#else
+    fprintf(dest, "usage: %s [-h] [-p port|device] [file]\n", cmd);
+#endif
 }
 
 // Prints the name and destination of the file
@@ -57,8 +61,12 @@ static void PrintLuaDbHelp(FILE *dest, const char *cmd) {
     PrintNameAndVersion(dest);
     fprintf(dest, "\n");
     fprintf(dest, "Options:\n");
+#ifndef _WIN32
     fprintf(dest, "  -p <port>, -p <dev>  start a FastCGI worker\n");
     fprintf(dest, "  -f                   do not fork this FastCGI process\n");
+#else
+    fprintf(dest, "  -p <port>, -p <dev>  start as a FastCGI worker\n");
+#endif
     fprintf(dest, "  -h                   print out this help text\n");
 }
 
