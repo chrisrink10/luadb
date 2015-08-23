@@ -31,9 +31,9 @@
  * FORWARD DECLARATIONS
  */
 
-static char *UuidLibUuidCreate();
-static char *Win32UuidCreate();
-static char *RandUuidCreate();
+static char *UuidLibUuidCreate(void);
+static char *Win32UuidCreate(void);
+static char *RandUuidCreate(void);
 
 // Library functions
 static luaL_Reg uuid_lib_funcs[] = {
@@ -64,7 +64,7 @@ int LuaDB_UuidUuid(lua_State *L) {
     return 1;
 }
 
-char *LuaDB_CreateGuid() {
+char *LuaDB_CreateGuid(void) {
 #ifdef LUADB_USE_UUID
     return UuidLibUuidCreate();
 #else  //LUADB_USE_UUID
@@ -81,7 +81,7 @@ char *LuaDB_CreateGuid() {
  */
 
 // Create a UUID using uuid.h defined on most *NIX systems.
-static char *UuidLibUuidCreate() {
+static char *UuidLibUuidCreate(void) {
 #ifdef LUADB_USE_UUID
     char *out = malloc(UUID_STR_SIZE + 1);
     if (!out) {
@@ -99,7 +99,7 @@ static char *UuidLibUuidCreate() {
 }
 
 // Create a UUID using the Windows API.
-static char *Win32UuidCreate() {
+static char *Win32UuidCreate(void) {
 #ifdef _WIN32
     char *out = malloc((sizeof(GUID) * 2) + 1);
     if (!out) {
@@ -124,7 +124,7 @@ static char *Win32UuidCreate() {
 }
 
 // Create a "UUID" using the rand() function from the C math library.
-static char *RandUuidCreate() {
+static char *RandUuidCreate(void) {
     char *out = malloc(RAND_MAX);
     if (!out) {
         return NULL;

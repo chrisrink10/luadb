@@ -15,7 +15,7 @@
  * @brief Create a new @c lua_State object instantiated with
  * the correct LuaDB libraries in the namespace.
  */
-lua_State *LuaDB_NewState();
+lua_State *LuaDB_NewState(void);
 
 /**
  * @brief Add the given path to the Lua `package.path` global exactly

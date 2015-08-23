@@ -25,6 +25,6 @@ int LuaDB_UuidUuid(lua_State *L);
  * @brief Create a new UUID value. Callers are responsible for freeing the
  * returned value.
  */
-char *LuaDB_CreateGuid();
+char *LuaDB_CreateGuid(void);
 
 #endif //LUADB_UUID_H

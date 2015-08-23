@@ -41,7 +41,7 @@ static void UpdateLuaPackagePath(lua_State *L, const char *path, bool truncate);
  * FORWARD DECLARATIONS
  */
 
-lua_State *LuaDB_NewState() {
+lua_State *LuaDB_NewState(void) {
     lua_State *L = luaL_newstate();
     if (!L) {
         return NULL;
