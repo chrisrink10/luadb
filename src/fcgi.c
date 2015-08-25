@@ -579,7 +579,7 @@ static char*ConvertEnvVarToHeader(const char *in, size_t len, size_t *outlen) {
         header[i] = cur;
     }
 
-    header[*outlen+1] = '\0';
+    header[*outlen] = '\0';
     return header;
 }
 
@@ -592,6 +592,6 @@ static char*ConvertEnvVarToLower(const char *in, size_t len) {
         header[i] = (char)tolower(in[i]);
     }
 
-    header[len+1] = '\0';
+    header[len] = '\0';
     return header;
 }

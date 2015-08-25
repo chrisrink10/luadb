@@ -242,7 +242,8 @@ static JsonNode *LuaTableToJsonPrivate(lua_State *L, int idx) {
 
     JsonNode *json;
     const char *orig = NULL;
-    const char *key = NULL;
+    char *key = NULL;
+    bool free_key = false;
     char numstr[JSON_STRING_KEY_DIGITS];
     lua_Number num;
     int inum = 0;
@@ -274,6 +275,7 @@ static JsonNode *LuaTableToJsonPrivate(lua_State *L, int idx) {
             case LUA_TSTRING:
                 orig = luaL_tolstring(L, idx+1, &len);
                 key = LuaDB_StrDupLen(orig, len);
+                free_key = true;
                 lua_pop(L, 1);
                 break;
             default:
@@ -293,6 +295,7 @@ static JsonNode *LuaTableToJsonPrivate(lua_State *L, int idx) {
             json_append_element(json, child);
         } else {
             json_append_member(json, key, child);
+            if (free_key) { free(key); }
         }
     }
 

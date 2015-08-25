@@ -1,0 +1,134 @@
+{
+   luaL_loadfilex cond
+   Memcheck:Cond
+   fun:luaL_loadfilex
+   ...
+}
+
+{
+   lua_pushstring cond
+   Memcheck:Cond
+   fun:luaO_pushvfstring
+   fun:lua_pushfstring
+   fun:luaL_loadfilex
+   ...
+}
+
+{
+   lua strlen value8
+   Memcheck:Value8
+   fun:strlen
+   fun:luaO_pushvfstring
+   fun:lua_pushfstring
+   fun:luaL_loadfilex
+   ...
+}
+
+{
+   luaS_hash value8
+   Memcheck:Value8
+   fun:luaS_hash
+   fun:internshrstr
+   fun:luaS_newlstr
+   fun:pushstr
+   fun:luaO_pushvfstring
+   fun:lua_pushfstring
+   fun:luaL_loadfilex
+   ...
+}
+
+{
+   createstrobj cond
+   Memcheck:Cond
+   fun:memcpy@@GLIBC_2.14
+   fun:createstrobj
+   fun:internshrstr
+   fun:luaS_newlstr
+   fun:pushstr
+   fun:luaO_pushvfstring
+   fun:lua_pushfstring
+   fun:luaL_loadfilex
+   ...
+}
+
+{
+   creatstrobj value8
+   Memcheck:Value8
+   fun:memcpy@@GLIBC_2.14
+   fun:createstrobj
+   fun:internshrstr
+   fun:luaS_newlstr
+   fun:pushstr
+   fun:luaO_pushvfstring
+   fun:lua_pushfstring
+   fun:luaL_loadfilex
+   ...
+}
+
+{
+   luaL_loadfilex param
+   Memcheck:Param
+   open(filename)
+   fun:__open_nocancel
+   fun:_IO_file_fopen@@GLIBC_2.2.5
+   fun:__fopen_internal
+   fun:luaL_loadfilex
+   ...
+}
+
+{
+   internshrstr value8
+   Memcheck:Value8
+   fun:__memcmp_sse4_1
+   fun:internshrstr
+   fun:luaS_newlstr
+   fun:pushstr
+   fun:luaO_pushvfstring
+   fun:lua_pushfstring
+   fun:luaL_loadfilex
+   ...
+}
+
+{
+   luaS_newlstr cond
+   Memcheck:Cond
+   fun:luaS_newlstr
+   fun:lua_pushlstring
+}
+
+{
+   luaS_hash cond
+   Memcheck:Cond
+   fun:luaS_hash
+   fun:internshrstr
+   fun:luaS_newlstr
+   fun:lua_pushlstring
+}
+
+{
+   internshrstr value8
+   Memcheck:Value8
+   fun:internshrstr
+   fun:luaS_newlstr
+   fun:lua_pushlstring
+   ...
+}
+
+{
+   internshrstr cond
+   Memcheck:Cond
+   fun:internshrstr
+   fun:luaS_newlstr
+   fun:lua_pushlstring
+}
+
+{
+   internshrstr memcmp cond
+   Memcheck:Cond
+   fun:__memcmp_sse4_1
+   fun:internshrstr
+   fun:luaS_newlstr
+   fun:lua_pushlstring
+   ...
+}
+
