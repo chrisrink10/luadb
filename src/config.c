@@ -21,14 +21,41 @@
 #include "state.h"
 #include "util.h"
 
-static const char *const LUADB_CONFIG_DEFAULT_ROUTER = "reqhandler.lua";
-static const char *const LUADB_CONFIG_DEFAULT_FCGI_QUERY_STRING = "QUERY_STRING";
+// Configuration value format function to format configuration values
+// before they are saved. Accepts current environment configuration,
+// given value, and value size.
+typedef char *(*ConfigFormatFunc)(LuaDB_EnvConfig *, const char*, size_t);
+
+// Configuration validation function to validate values given by users.
+typedef bool (*ConfigValidateFunc)(const char*, size_t);
+
+// Default configuration value details
+typedef struct DefaultConfig {
+    const char *name;
+    size_t len;
+    const char *val;
+    int offset;
+    ConfigFormatFunc fmt;
+    ConfigValidateFunc validate;
+} DefaultConfig;
 
 /*
  * FORWARD DECLARATIONS
  */
 
 static bool LoadConfigFromLua(lua_State *L, LuaDB_EnvConfig *config);
+static inline void LoadConfigSetting(lua_State *L, LuaDB_EnvConfig *config, DefaultConfig *def);
+static inline void ApplyDefaultConfig(LuaDB_EnvConfig *config, LuaDB_Setting *s, DefaultConfig *def);
+static inline char *FormatRouter(LuaDB_EnvConfig *config, const char *val, size_t len);
+
+// NOTE: Order is extremely important; certain format functions may require
+// certain values to be defined in the LuaDB_EnvConfig struct before they
+// can work properly.
+static DefaultConfig default_cfg[] = {
+        { "root", 4, LUADB_WEB_ROOT_L, offsetof(LuaDB_EnvConfig, root), NULL, NULL },
+        { "router", 6,  "reqhandler.lua", offsetof(LuaDB_EnvConfig, router), &FormatRouter, NULL },
+        { "fcgi_query", 10, "QUERY_STRING", offsetof(LuaDB_EnvConfig, fcgi_query), NULL, NULL },
+};
 
 /*
  * PUBLIC FUNCTIONS
@@ -88,48 +115,71 @@ static bool LoadConfigFromLua(lua_State *L, LuaDB_EnvConfig *config) {
     assert(L);
     assert(config);
 
-    // TODO: check for and ignore failed configuration
-    lua_pushlstring(L, "root", 4);
-    if (lua_gettable(L, -2) != LUA_TNIL) {
-        size_t rootlen;
-        const char *root = luaL_tolstring(L, -1, &rootlen);
-        config->root.val = LuaDB_StrDupLen(root, rootlen);
-        config->root.len = rootlen;
-        lua_pop(L, 2);
-    } else {
-        config->root.val = LuaDB_StrDup(LUADB_WEB_ROOT);
-        config->root.len = strlen(LUADB_WEB_ROOT);
-    }
-
-    lua_pushlstring(L, "router", 6);
-    if (lua_gettable(L, -2) != LUA_TNIL) {
-        size_t routerlen;
-        const char *router = luaL_tolstring(L, -1, &routerlen);
-        config->router.val = LuaDB_PathJoinLen(config->root.val,
-                                               config->root.len,
-                                               router, routerlen);
-        config->router.len = routerlen;
-        lua_pop(L, 2);
-    } else {
-        config->router.val = LuaDB_PathJoinLen(config->root.val,
-                                               config->root.len,
-                                               LUADB_CONFIG_DEFAULT_ROUTER,
-                                               strlen(LUADB_CONFIG_DEFAULT_ROUTER));
-        config->router.len = strlen(config->router.val);
-    }
-
-    lua_pushlstring(L, "fcgi_query", 10);
-    if (lua_gettable(L, -2) != LUA_TNIL) {
-        size_t paramlen;
-        const char *fcgi_query = luaL_tolstring(L, -1, &paramlen);
-        config->fcgi_query.val = LuaDB_StrDupLen(fcgi_query, paramlen);
-        config->fcgi_query.len = paramlen;
-        lua_pop(L, 2);
-    } else {
-        config->fcgi_query.val = LuaDB_StrDup(
-                LUADB_CONFIG_DEFAULT_FCGI_QUERY_STRING);
-        config->fcgi_query.len = strlen(LUADB_CONFIG_DEFAULT_FCGI_QUERY_STRING);
+    size_t len = sizeof(default_cfg) / sizeof(default_cfg[0]);
+    for (int i = 0; i < len; i++) {
+        LoadConfigSetting(L, config, &default_cfg[i]);
     }
 
     return true;
+}
+
+// Load a generic configuration setting from the config table.
+static inline void LoadConfigSetting(lua_State *L, LuaDB_EnvConfig *config, DefaultConfig *def) {
+    assert(L);
+    assert(config);
+    assert(def);
+
+    // Get a pointer to the setting in the configuration
+    LuaDB_Setting *s = (LuaDB_Setting *)((char *)config + def->offset);
+
+    // Load the configuration given in environment config file
+    lua_pushlstring(L, def->name, def->len);
+
+    // Environment config contained a value
+    if (lua_gettable(L, -2) != LUA_TNIL) {
+        size_t len;
+        const char *setval = luaL_tolstring(L, -1, &len);
+
+        // Validate the user's given value
+        if (def->validate && !def->validate(setval, len)) {
+            ApplyDefaultConfig(config, s, def);
+            lua_pop(L, 2);
+            return;
+        }
+
+        // Apply any formatting to it
+        if (def->fmt) {
+            s->val = def->fmt(config, setval, len);
+            s->len = strlen(s->val);
+        } else {
+            s->val = LuaDB_StrDupLen(setval, len);
+            s->len = len;
+        }
+        lua_pop(L, 2);
+    } else {
+        // No value found, use defaults
+        ApplyDefaultConfig(config, s, def);
+    }
+}
+
+// Apply default configuration to a setting.
+static inline void ApplyDefaultConfig(LuaDB_EnvConfig *config, LuaDB_Setting *s, DefaultConfig *def) {
+    s->len = strlen(def->val);
+    s->val = LuaDB_StrDupLen(def->val, s->len);
+
+    if (def->fmt) {
+        char *newval = def->fmt(config, s->val, s->len);
+        free(s->val);
+        s->val = newval;
+        s->len = strlen(s->val);
+    }
+}
+
+/*
+ * PRIVATE FORMAT FUNCTIONS
+ */
+
+// Format the router name to be a fully qualified path
+static inline char *FormatRouter(LuaDB_EnvConfig *config, const char *val, size_t len) {
+    return LuaDB_PathJoinLen(config->root.val, config->root.len, val, len);
 }

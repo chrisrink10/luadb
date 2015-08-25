@@ -19,13 +19,16 @@ static const int LUADB_PATCH_VERSION = 0;
 static const char *const LUADB_PATCH_STATUS = "alpha";
 
 #ifdef _WIN32
-static const char *const LUADB_CONFIG_FOLDER = "C:\\luadb\\config\\";
-static const char *const LUADB_WEB_ROOT = "C:\\luadb\\web\\";
-static const char *const LUADB_LOG_FOLDER = "C:\\luadb\\log\\";
+#define LUADB_CONFIG_FOLDER_L "C:\\luadb\\config\\"
+#define LUADB_WEB_ROOT_L "C:\\luadb\\web\\"
+#define LUADB_LOG_FOLDER_L "C:\\luadb\\log\\"
 #else
-static const char *const LUADB_CONFIG_FOLDER = "/etc/luadb/";
-static const char *const LUADB_WEB_ROOT = "/var/www/luadb/";
-static const char *const LUADB_LOG_FOLDER = "/var/log/luadb/";
+#define LUADB_CONFIG_FOLDER_L "/etc/luadb/"
+#define LUADB_WEB_ROOT_L "/var/www/luadb/"
+#define LUADB_LOG_FOLDER_L "/var/log/luadb/"
 #endif
+static const char *const LUADB_CONFIG_FOLDER = LUADB_CONFIG_FOLDER_L;
+static const char *const LUADB_WEB_ROOT = LUADB_WEB_ROOT_L;
+static const char *const LUADB_LOG_FOLDER = LUADB_LOG_FOLDER_L;
 
 #endif //LUADB_LUADB_H
