@@ -20,15 +20,11 @@
 
 #include "json.h"
 #include "lmdb.h"
+#include "luadb.h"
 #include "state.h"
 #include "uuid.h"
 
-#ifdef _WIN32
-static const char *const PATH_SEPARATOR = "\\";
-#else  //_WIN32
-static const char *const PATH_SEPARATOR = "/";
-#endif //_WIN32
-#define ENDS_WITH_SEP(str, strlen) (str[strlen-1] == PATH_SEPARATOR[0])
+#define ENDS_WITH_SEP(str, strlen) (str[strlen-1] == LUADB_PATH_SEPARATOR[0])
 
 /*
  * FORWARD DECLARATIONS
@@ -125,7 +121,7 @@ static char *AppendLuaDbPath(const char *cur_path, size_t len, const char *path,
 
     // Generate the new path
     sprintf(newpath, "%s;%s%s?.lua", cur_path, dir,
-            (need_sep) ? PATH_SEPARATOR : "");
+            (need_sep) ? LUADB_PATH_SEPARATOR_L : "");
     free(pathcpy);
     return newpath;
 }

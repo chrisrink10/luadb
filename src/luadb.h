@@ -22,13 +22,16 @@ static const char *const LUADB_PATCH_STATUS = "alpha";
 #define LUADB_CONFIG_FOLDER_L "C:\\luadb\\config\\"
 #define LUADB_WEB_ROOT_L "C:\\luadb\\web\\"
 #define LUADB_LOG_FOLDER_L "C:\\luadb\\log\\"
+#define LUADB_PATH_SEPARATOR_L "\\"
 #else
 #define LUADB_CONFIG_FOLDER_L "/etc/luadb/"
 #define LUADB_WEB_ROOT_L "/var/www/luadb/"
 #define LUADB_LOG_FOLDER_L "/var/log/luadb/"
+#define LUADB_PATH_SEPARATOR_L "/"
 #endif
 static const char *const LUADB_CONFIG_FOLDER = LUADB_CONFIG_FOLDER_L;
 static const char *const LUADB_WEB_ROOT = LUADB_WEB_ROOT_L;
 static const char *const LUADB_LOG_FOLDER = LUADB_LOG_FOLDER_L;
+static const char *const LUADB_PATH_SEPARATOR = LUADB_PATH_SEPARATOR_L;
 
 #endif //LUADB_LUADB_H

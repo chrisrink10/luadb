@@ -14,17 +14,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "luadb.h"
 #include "util.h"
 
 #define QUERY_STRING_KEY_SEPARATOR '='
 #define QUERY_STRING_FIELD_SEPARATOR '&'
 #define QUERY_STRING_FIELD_SEPARATOR_BACKUP ';'
-#ifdef _WIN32
-static const char *const PATH_SEPARATOR = "\\";
-#else  //_WIN32
-static const char *const PATH_SEPARATOR = "/";
-#endif //_WIN32
-#define ENDS_WITH_SEP(str, strlen) (str[strlen-1] == PATH_SEPARATOR[0])
+#define ENDS_WITH_SEP(str, strlen) (str[strlen-1] == LUADB_PATH_SEPARATOR[0])
 #define REMAINDER_LEN(iter, field) (iter->qslen - (field - iter->qs))
 
 static char HexToAscii(char *hex);
@@ -46,7 +42,7 @@ char *LuaDB_PathJoinLen(const char *x, size_t xlen, const char *y, size_t ylen) 
         return NULL;
     }
 
-    snprintf(path, len, "%s%s%s", x, (hassep ? "" : PATH_SEPARATOR), y);
+    snprintf(path, len, "%s%s%s", x, (hassep ? "" : LUADB_PATH_SEPARATOR_L), y);
     return path;
 }
 
