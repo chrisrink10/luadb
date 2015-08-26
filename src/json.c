@@ -243,7 +243,6 @@ static JsonNode *LuaTableToJsonPrivate(lua_State *L, int idx) {
     JsonNode *json;
     const char *orig = NULL;
     char *key = NULL;
-    bool free_key = false;
     char numstr[JSON_STRING_KEY_DIGITS];
     lua_Number num;
     int inum = 0;
@@ -258,6 +257,7 @@ static JsonNode *LuaTableToJsonPrivate(lua_State *L, int idx) {
     // Traverse the Lua table
     lua_pushnil(L);
     while (lua_next(L, idx) != 0) {
+        bool free_key = false;
         // Key (index -2), Value (index -1)
         int ktype = lua_type(L, idx+1);
 
