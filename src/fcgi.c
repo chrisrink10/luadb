@@ -27,8 +27,6 @@
 static const int FASTCGI_DEFAULT_BACKLOG = 10;
 static const int FASTCGI_DEFAULT_NUM_VARS = 20;
 static const int FASTCGI_DEFAULT_NUM_HEADERS = 10;  /* Approx num headers/req */
-static const char *const FASTCGI_ENVIRON_PREFIX = "HTTP_";
-static const size_t FASTCGI_ENVIRON_PREFIX_LEN = 5;
 static const char FASTCGI_KEY_VALUE_SEP = '=';
 
 /*
@@ -49,12 +47,12 @@ static void SendHttpResponseStatus(lua_State *L, FCGX_Request *req);
 static void SendHttpResponseHeaders(lua_State *L, FCGX_Request *req);
 static void SendHttpResponseBody(lua_State *L, FCGX_Request *req);
 static bool ReadHttpRequest(lua_State *L, FCGX_Request *req, LuaDB_EnvConfig *config);
-static bool ReadHttpRequestHeaders(lua_State *L, FCGX_Request *req);
+static bool ReadHttpRequestHeaders(lua_State *L, FCGX_Request *req, LuaDB_EnvConfig *config);
 static bool ReadHttpRequestVars(lua_State *L, FCGX_Request *req, LuaDB_EnvConfig *config);
 static bool ReadHttpRequestBody(lua_State *L, FCGX_Request *req);
 static bool ReadHttpRequestQueryString(lua_State *L, const char *qs, size_t *len);
 static inline void PushQueryValueString(lua_State *L, const char *key, size_t keylen, const char *val, size_t vallen);
-static char *ConvertEnvVarToHeader(const char *in, size_t len, size_t *outlen);
+static char *ConvertEnvVarToHeader(LuaDB_Setting *pfx, const char *in, size_t len, size_t *outlen);
 static char *ConvertEnvVarToLower(const char *in, size_t len);
 
 /*
@@ -283,7 +281,7 @@ static bool ReadHttpRequest(lua_State *L, FCGX_Request *req, LuaDB_EnvConfig *co
     if (!loaded_body) { return false; }
 
     // Add the request headers
-    bool loaded_headers = ReadHttpRequestHeaders(L, req);
+    bool loaded_headers = ReadHttpRequestHeaders(L, req, config);
     if (!loaded_headers) { return false; }
 
     // Add any web-server variables
@@ -318,8 +316,8 @@ static bool ReadHttpRequestVars(lua_State *L, FCGX_Request *req, LuaDB_EnvConfig
     environ = req->envp;
     for (int i = 0; environ[i] != NULL; i++) {
         // Skip any headers with the prefix HTTP_
-        if (strncmp(environ[i], FASTCGI_ENVIRON_PREFIX,
-                    FASTCGI_ENVIRON_PREFIX_LEN) == 0) {
+        if (strncmp(environ[i], config->fcgi_header_prefix.val,
+                    config->fcgi_header_prefix.len) == 0) {
             continue;
         }
 
@@ -377,7 +375,7 @@ static bool ReadHttpRequestVars(lua_State *L, FCGX_Request *req, LuaDB_EnvConfig
 // names to a more 'correct' HTTP header style using title-casing and
 // underscores will be converted to hyphens. This might mangle certain
 // header names such as "DNT", which will be rendered as "Dnt".
-static bool ReadHttpRequestHeaders(lua_State *L, FCGX_Request *req) {
+static bool ReadHttpRequestHeaders(lua_State *L, FCGX_Request *req, LuaDB_EnvConfig *config) {
     assert(L);
     assert(req);
 
@@ -392,8 +390,8 @@ static bool ReadHttpRequestHeaders(lua_State *L, FCGX_Request *req) {
     environ = req->envp;
     for (int i = 0; environ[i] != NULL; i++) {
         // Skip any headers without the prefix HTTP_
-        if (strncmp(environ[i], FASTCGI_ENVIRON_PREFIX,
-                    FASTCGI_ENVIRON_PREFIX_LEN) != 0) {
+        if (strncmp(environ[i], config->fcgi_header_prefix.val,
+                    config->fcgi_header_prefix.len) != 0) {
             continue;
         }
 
@@ -410,7 +408,8 @@ static bool ReadHttpRequestHeaders(lua_State *L, FCGX_Request *req) {
         size_t outlen;
 
         // Convert the environment variable name to a header name
-        char *header = ConvertEnvVarToHeader(environ[i], keylen, &outlen);
+        char *header = ConvertEnvVarToHeader(&config->fcgi_header_prefix,
+                                             environ[i], keylen, &outlen);
         if (!header) { continue; }
 
         // Push the header key and value into the table
@@ -552,14 +551,14 @@ static inline void PushQueryValueString(lua_State *L, const char *key, size_t ke
 //
 // This function also assumes that HTTP Header keys are ASCII encoded,
 // which is currently required by RFC 2616 for HTTP Headers.
-static char*ConvertEnvVarToHeader(const char *in, size_t len, size_t *outlen) {
-    *outlen = len - FASTCGI_ENVIRON_PREFIX_LEN;
+static char*ConvertEnvVarToHeader(LuaDB_Setting *pfx, const char *in, size_t len, size_t *outlen) {
+    *outlen = len - pfx->len;
     char *header = malloc(*outlen + 1);
     if (!header) { return NULL; }
 
     bool first = true;
     for (int i = 0; i < (*outlen); i++) {
-        char cur = in[i+FASTCGI_ENVIRON_PREFIX_LEN];
+        char cur = in[i+pfx->len];
 
         // Convert all underscores to hyphens
         if (cur == '_') {

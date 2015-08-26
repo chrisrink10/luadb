@@ -25,6 +25,7 @@ typedef struct LuaDB_EnvConfig {
     LuaDB_Setting root;
     LuaDB_Setting router;
     LuaDB_Setting fcgi_query;
+    LuaDB_Setting fcgi_header_prefix;
 } LuaDB_EnvConfig;
 
 /**

@@ -55,6 +55,7 @@ static DefaultConfig default_cfg[] = {
         { "root", 4, LUADB_WEB_ROOT_L, offsetof(LuaDB_EnvConfig, root), NULL, NULL },
         { "router", 6,  "reqhandler.lua", offsetof(LuaDB_EnvConfig, router), &FormatRouter, NULL },
         { "fcgi_query", 10, "QUERY_STRING", offsetof(LuaDB_EnvConfig, fcgi_query), NULL, NULL },
+        { "fcgi_header_prefix", 18, "HTTP_", offsetof(LuaDB_EnvConfig, fcgi_header_prefix), NULL, NULL },
 };
 
 /*
