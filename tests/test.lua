@@ -126,7 +126,7 @@ function LuaTest:run()
   end
 
   print(string.format("Test results for '%s' test suite", self.name))
-  i = 1
+  local i = 1
   for name, case in pairs(self.cases) do
     self.cur = name
     if case["runner"] == nil then
