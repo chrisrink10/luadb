@@ -112,10 +112,28 @@ end
 
 -- Test that reference cycles do not result in infinite loops
 function test_ref_cycles()
-  --local a = {}
-	--a.a = a
-	--local x = json.encode(a)
-	--lt:assert_equal(x == nil)
+	-- Test a basic reference cycle
+  	local a = {}
+	a.a = a
+	local x = pcall(json.encode, a)
+	lt:assert_equal(x, false)
+
+	-- Test that we don't falsely detect a reference for shared non-cyclic
+	-- references from a higher table level
+	local b = {}
+	local c = {}
+	b.a = {}
+	b.b = {["a"]=c, ["c"]=c}
+	local y = pcall(json.encode, b)
+	lt:assert_equal(y, true)
+
+	-- Test a slightly more complex case
+	local d = {}
+	local e = {}
+	d.a = {}
+	d.b = {["a"]=d, ["c"]={["e"]=e}}
+	local y = pcall(json.encode, d)
+	lt:assert_equal(y, false)
 end
 
 
@@ -216,7 +234,7 @@ lt:add_case("encode", function()
 	test_large_nums()
 	test_numeric_keys()
 	test_normal_encoding()
-	--test_ref_cycles()
+	test_ref_cycles()
 end)
 
 lt:add_case("decode", function()

@@ -19,7 +19,9 @@
 #include "json.h"
 #include "util.h"
 
+#define JSON_REF_TABLE_IDX_L 1
 static const char *const JSON_ARRAY_METAFIELD = "_json_array";
+static const int JSON_REF_TABLE_IDX = JSON_REF_TABLE_IDX_L;
 #ifndef _WIN32
 static const int JSON_STRING_KEY_DIGITS = 15;
 #else  //_WIN32
@@ -30,6 +32,7 @@ static const int JSON_STRING_KEY_DIGITS = 15;
  * FORWARD DECLARATIONS
  */
 
+static int JsonEncodePrivate(lua_State *L);
 static inline void JsonToLuaValue(lua_State *L, JsonNode *json);
 static JsonNode *LuaValueToJson(lua_State *L);
 static void JsonToLuaValuePrivate(lua_State *L, JsonNode *json, int i);
@@ -37,6 +40,9 @@ static inline void SetTableAsJsonArray(lua_State *L, int idx);
 static JsonNode *LuaTableToJsonPrivate(lua_State *L, int idx);
 static bool LuaNumberIsInt(lua_Number n, int *v);
 static inline bool LuaTableIsJsonArray(lua_State *L, int idx);
+static void AddTableRef(lua_State *L, int upvidx, int idx);
+static bool IsRefCycle(lua_State *L, int upvidx, int idx);
+static void RemoveTableRef(lua_State *L, int upvidx, int idx);
 
 // Library functions
 static luaL_Reg json_lib_funcs[] = {
@@ -74,17 +80,15 @@ int LuaDB_JsonDecode(lua_State *L) {
 }
 
 int LuaDB_JsonEncode(lua_State *L) {
-    JsonNode *json = LuaValueToJson(L);
-    char *str = json_encode(json);
-    if (!str) {
-        free(json);
-        lua_pushnil(L);
-        return 1;
-    }
+    // Expect one value on the stack (argument)
+    // Push a reference cycle table as an upvalue and create a closure
+    lua_newtable(L);
+    lua_pushcclosure(L, &JsonEncodePrivate, 1);
 
-    lua_pushstring(L, str);
-    json_delete(json);
-    free(str);
+    // Rotate the initial argument to the top of the stack
+    // Call the closure with the original argument
+    lua_rotate(L, -2, 1);
+    lua_call(L, 1, 1);
     return 1;
 }
 
@@ -115,6 +119,22 @@ int LuaDB_JsonMakeArray(lua_State *L) {
  * PRIVATE FUNCTIONS
  */
 
+// Private JSON encoder function to be used as a Lua closure
+static int JsonEncodePrivate(lua_State *L) {
+    JsonNode *json = LuaValueToJson(L);
+    char *str = json_encode(json);
+    if (!str) {
+        free(json);
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_pushstring(L, str);
+    json_delete(json);
+    free(str);
+    return 1;
+}
+
 // Convert a JsonNode structure into a Lua value.
 static inline void JsonToLuaValue(lua_State *L, JsonNode *json) {
     assert(L);
@@ -133,7 +153,20 @@ static JsonNode *LuaValueToJson(lua_State *L) {
 
     switch (type) {
         case LUA_TTABLE:
+            // Check if the current value is a reference cycle
+            if (IsRefCycle(L, JSON_REF_TABLE_IDX, top)) {
+                luaL_error(L, "reference cycle detected in table");
+                return NULL;
+            }
+
+            // Add a reference to our tracking table
+            AddTableRef(L, JSON_REF_TABLE_IDX, top);
+
+            // Convert the table to JSON
             json = LuaTableToJsonPrivate(L, top);
+
+            // Remove the table reference again after we unwind
+            RemoveTableRef(L, JSON_REF_TABLE_IDX, top);
             break;
         case LUA_TSTRING:
             json = json_mkstring(luaL_tolstring(L, top, NULL));
@@ -313,4 +346,31 @@ static inline bool LuaTableIsJsonArray(lua_State *L, int idx) {
     bool is_array = (luaL_getmetafield(L, idx, JSON_ARRAY_METAFIELD) != LUA_TNIL);
     if (is_array) { lua_pop(L, 1); }
     return is_array;
+}
+
+// Add a reference to the table at idx to the reference cycle table
+static void AddTableRef(lua_State *L, int upvidx, int idx) {
+    lua_pushvalue(L, idx);
+    lua_pushboolean(L, 1);
+    lua_settable(L, lua_upvalueindex(upvidx));
+}
+
+// Check if the table at idx already exists in the table (i.e. this is a cycle)
+static bool IsRefCycle(lua_State *L, int upvidx, int idx) {
+    bool is_ref_cycle = false;
+
+    lua_pushvalue(L, idx);
+    if (lua_gettable(L, lua_upvalueindex(upvidx)) != LUA_TNIL) {
+        is_ref_cycle = true;
+    }
+
+    lua_pop(L, 1);
+    return is_ref_cycle;
+}
+
+// Remove a reference to the table at idx to the reference cycle table
+static void RemoveTableRef(lua_State *L, int upvidx, int idx) {
+    lua_pushvalue(L, idx);
+    lua_pushnil(L);
+    lua_settable(L, lua_upvalueindex(upvidx));
 }
