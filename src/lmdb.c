@@ -1191,7 +1191,7 @@ static bool PushValueByType(lua_State *L, const char *val, size_t len, int type)
         case LMDB_INTEGER_CHAR: {
             lua_Integer i;
 #ifdef _WIN32
-            __mingw_sscanf(val, "%lld", &f);
+            __mingw_sscanf(val, "%lld", &i);
 #else
             sscanf(val, "%lld", &i);
 #endif

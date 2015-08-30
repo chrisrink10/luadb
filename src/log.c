@@ -28,7 +28,7 @@ char *__luadb_pfx = NULL;
 
 // Open the system log file
 void openlog(const char *pfx, int logopt, int facility) {
-    __luadb_pfx = luadb_strdup(pfx);
+    __luadb_pfx = LuaDB_StrDup(pfx);
     __luadb_logfile = fopen("luadb.log", "a+");
 }
 
