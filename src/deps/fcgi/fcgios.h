@@ -50,7 +50,7 @@ extern "C" {
 #endif /* !_WIN32 */
 
 #ifndef DLLAPI
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(__MINGW32__) && !defined(LUADB_FASTCGI_STATIC)
 #define DLLAPI __declspec(dllimport)
 #else
 #define DLLAPI

@@ -29,7 +29,11 @@ static const char rcsid[] = "$Id: os_win32.c,v 1.34 2003/06/22 00:16:43 robs Exp
 #include <sys/timeb.h>
 #include <process.h>
 
+#if defined(_WIN32) && !defined(__MINGW32__) && !defined(LUADB_FASTCGI_STATIC)
 #define DLLAPI  __declspec(dllexport)
+#else
+#define DLLAPI
+#endif
 
 #include "fcgimisc.h"
 #include "fcgios.h"

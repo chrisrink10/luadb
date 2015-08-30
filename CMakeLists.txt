@@ -54,6 +54,8 @@ check_include_files(uuid/uuid.h HAVE_UUID_H)
 if(WIN32)
     check_include_files(objbase.h HAVE_OBJBASE_H)
     check_include_files(windows.h HAVE_WINDOWS_H)
+    find_library(LIB_KERNEL32 Kernel32)
+    find_library(LIB_WINSOCK2 ws2_32)
 endif(WIN32)
 
 check_function_exists(strerror HAVE_STRERROR)
@@ -78,17 +80,27 @@ endif(LIB_UUID)
 # Cache the existing flags
 set(LUADB_CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 
+# Specify the GNU99 standard if we're using MINGW
+if (MINGW)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99")
+else(MINGW)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99")
+endif(MINGW)
+
 # Specific compile flags
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUA_USE_APICHECK")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -pthread") #-O2 -DNDEBUG
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wno-format-extra-args")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DLUA_USE_APICHECK -pthread")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -Wall -Wno-format-extra-args")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g")
 
 # FastCGI flags
-set(LUADB_FCGI_C_FLAGS "-D_XOPEN_SOURCE -D__USE_MISC")
+set(LUADB_FCGI_C_FLAGS "-D_XOPEN_SOURCE -D__USE_MISC -DLUADB_FASTCGI_STATIC")
 set(LUADB_FCGI_C_FLAGS "${LUADB_FCGI_C_FLAGS} -Wno-pointer-sign -Wno-unused-function -Wno-unused-variable")
 configure_file(${PROJECT_SOURCE_DIR}/src/deps/fcgi/fcgi_config.h.in
                ${PROJECT_SOURCE_DIR}/src/deps/fcgi/fcgi_config.h)
+if(WIN32)
+    set(LUADB_FCGI_LD_FLAGS "--export-all-symbols")
+endif(WIN32)
+
 
 # LuaDB Flags
 set(LUADB_C_FLAGS "-Werror -Wno-unused-function")
@@ -101,11 +113,6 @@ endif(HAVE_SYSLOG_H)
 
 # LMDB Flags
 set(LUADB_LMDB_C_FLAGS "-O2 -g -Wno-unused-parameter -Wbad-function-cast -Wuninitialized")
-
-# Specify the GNU99 standard if we're using MINGW
-if (MINGW)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99")
-endif(MINGW)
 
 ##############################
 # Source Files
@@ -140,6 +147,7 @@ endif(${WIN32})
 add_library(fastcgi STATIC ${FCGI_LIB_SRCS})
 set_target_properties(fastcgi PROPERTIES
     COMPILE_FLAGS "${LUADB_FCGI_C_FLAGS}"
+    LINK_FLAGS "${LUADB_FCGI_LD_FLAGS}"
 )
 
 # CCAN JSON library files
@@ -194,7 +202,6 @@ set_target_properties(lmdb PROPERTIES
     COMPILE_FLAGS "${LUADB_LMDB_C_FLAGS}"
 )
 if(WIN32)
-    find_library(LIB_KERNEL32 Kernel32)
     if (LIB_KERNEL32_FOUND)
         target_link_libraries(lmdb LIB_KERNEL32)
     endif(LIB_KERNEL32_FOUND)
@@ -221,8 +228,11 @@ set_target_properties(luadb PROPERTIES
 ##############################
 # Link in Libraries
 ##############################
-
-target_link_libraries(luadb fastcgi)
+if (WIN32)
+    target_link_libraries(luadb fastcgi -lws2_32)
+else(WIN32)
+    target_link_libraries(luadb fastcgi)
+endif(WIN32)
 target_link_libraries(luadb json)
 target_link_libraries(luadb luacore)
 target_link_libraries(luadb lual -lm)
