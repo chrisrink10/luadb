@@ -62,7 +62,6 @@ static DefaultConfig default_cfg[] = {
  * PUBLIC FUNCTIONS
  */
 
-// Read the environment configuration file into a struct.
 bool LuaDB_ReadEnvironmentConfig(LuaDB_EnvConfig *config) {
     assert(config);
 
@@ -98,7 +97,6 @@ bool LuaDB_ReadEnvironmentConfig(LuaDB_EnvConfig *config) {
     return true;
 }
 
-// Clean up any strings saved in the environment configuration.
 void LuaDB_CleanEnvironmentConfig(LuaDB_EnvConfig *config) {
     assert(config);
 
@@ -117,7 +115,7 @@ static bool LoadConfigFromLua(lua_State *L, LuaDB_EnvConfig *config) {
     assert(config);
 
     size_t len = sizeof(default_cfg) / sizeof(default_cfg[0]);
-    for (int i = 0; i < len; i++) {
+    for (size_t i = 0; i < len; i++) {
         LoadConfigSetting(L, config, &default_cfg[i]);
     }
 

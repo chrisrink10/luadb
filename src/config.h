@@ -34,7 +34,7 @@ typedef struct LuaDB_EnvConfig {
 bool LuaDB_ReadEnvironmentConfig(LuaDB_EnvConfig *config);
 
 /**
- * @brief
+ * @brief Clean up any strings saved in the environment configuration.
  */
 void LuaDB_CleanEnvironmentConfig(LuaDB_EnvConfig *config);
 

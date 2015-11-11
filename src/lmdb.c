@@ -161,7 +161,7 @@ static luaL_Reg lmdb_cursor_methods[] = {
 // LMDB Environment flags
 typedef struct luadb_env_flag {
     char *name;
-    int val;
+    unsigned int val;
 } luadb_env_flag;
 static luadb_env_flag lmdb_env_opts[] = {
         { "fixedmap", MDB_FIXEDMAP },
@@ -175,7 +175,7 @@ static luadb_env_flag lmdb_env_opts[] = {
         { "nolock", MDB_NOLOCK },
         { "nordahead", MDB_NORDAHEAD },
         { "nomeminit", MDB_NOMEMINIT },
-        { NULL },
+        { NULL, 0 },
 };
 
 /*

@@ -91,7 +91,7 @@ int LuaDB_FcgiStartWorker(const char *path) {
     LuaDB_CleanEnvironmentConfig(&config);
     syslog(LOG_INFO, "Stopping FastCGI worker on %s", path);
     return EXIT_SUCCESS;
-};
+}
 
 /*
  * PRIVATE FUNCTIONS
@@ -557,7 +557,7 @@ static char*ConvertEnvVarToHeader(LuaDB_Setting *pfx, const char *in, size_t len
     if (!header) { return NULL; }
 
     bool first = true;
-    for (int i = 0; i < (*outlen); i++) {
+    for (size_t i = 0; i < (*outlen); i++) {
         char cur = in[i+pfx->len];
 
         // Convert all underscores to hyphens
@@ -587,7 +587,7 @@ static char*ConvertEnvVarToLower(const char *in, size_t len) {
     char *header = malloc(len + 1);
     if (!header) { return NULL; }
 
-    for (int i = 0; i < len; i++) {
+    for (size_t i = 0; i < len; i++) {
         header[i] = (char)tolower(in[i]);
     }
 

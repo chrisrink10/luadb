@@ -82,5 +82,4 @@ static const char *priority_name(int priority) {
         default:          return pristr[0];             // UNKNOWN
     }
 }
-
 #endif

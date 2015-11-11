@@ -20,9 +20,9 @@
 #define QUERY_STRING_KEY_SEPARATOR '='
 #define QUERY_STRING_FIELD_SEPARATOR '&'
 #define QUERY_STRING_FIELD_SEPARATOR_BACKUP ';'
-#define ENDS_WITH_SEP(str, strlen) (str[strlen-1] == LUADB_PATH_SEPARATOR[0])
-#define REMAINDER_LEN(iter, field) (iter->qslen - (field - iter->qs))
 
+static bool EndsWithPathSeparator(const char *str, size_t len);
+static size_t RemainderLength(LuaDB_QueryIter *iter, const char *field);
 static char HexToAscii(char *hex);
 static int HexDigitToDecimal(char hex);
 
@@ -35,7 +35,7 @@ char *LuaDB_PathJoin(const char *x, const char *y) {
 }
 
 char *LuaDB_PathJoinLen(const char *x, size_t xlen, const char *y, size_t ylen) {
-    int hassep = ENDS_WITH_SEP(x, xlen);
+    bool hassep = EndsWithPathSeparator(x, xlen);
     size_t len = xlen + ylen + (hassep ? 1 : 2);
     char *path = malloc(len);
     if (!path) {
@@ -97,7 +97,9 @@ bool LuaDB_QueryIterNext(LuaDB_QueryIter *iter) {
     // - we have reached the end => !kvsep
     if (onlykey || !kvsep) {
         iter->cur = (onlykey) ? (fsep + 1) : NULL;
-        iter->keylen = (onlykey) ? (fsep - iter->key) : REMAINDER_LEN(iter, iter->key);
+        iter->keylen = (onlykey) ?
+                       (size_t)(fsep - iter->key) :
+                       RemainderLength(iter, iter->key);
         iter->val = NULL;   // No value found
         iter->vallen = 0;   // Value length is 0
         return true;
@@ -105,15 +107,15 @@ bool LuaDB_QueryIterNext(LuaDB_QueryIter *iter) {
 
     // Set a value pointer and compute a key length
     iter->val = kvsep + 1;
-    iter->keylen = (kvsep - iter->key);
+    iter->keylen = (size_t)(kvsep - iter->key);
 
     // No next field was found; this is fine
     if (!fsep) {
         iter->cur = NULL;       // Set current null to indicate this iterator is done
-        iter->vallen = REMAINDER_LEN(iter, iter->val);
+        iter->vallen = RemainderLength(iter, iter->val);
     } else {
         iter->cur = fsep + 1;
-        iter->vallen = (fsep - iter->val);
+        iter->vallen = (size_t)(fsep - iter->val);
     }
 
     return true;
@@ -129,7 +131,7 @@ char *LuaDB_QueryStrDecode(const char *in, size_t inlen, size_t *outlen) {
         return NULL;
     }
 
-    for (int i = 0; i < inlen; ) {
+    for (size_t i = 0; i < inlen; ) {
         bool enough_chars;
         switch (in[i]) {
             case '%':
@@ -177,6 +179,16 @@ char *LuaDB_StrDupLen(const char *in, size_t n) {
 /*
  * PRIVATE FUNCTIONS
  */
+
+// Return true if the string of given length ends with a path separator
+static bool EndsWithPathSeparator(const char *str, size_t len) {
+    return (str[len-1] == LUADB_PATH_SEPARATOR[0]);
+}
+
+// Return the length remaining from the given field in a query string to the end
+static size_t RemainderLength(LuaDB_QueryIter *iter, const char *field) {
+    return iter->qslen - (size_t)(field - iter->qs);
+}
 
 // Decode a two digit hex code into a decimal value.
 static char HexToAscii(char *hex) {
