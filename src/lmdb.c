@@ -86,6 +86,7 @@ static int LmdbTx_Close(lua_State *L);
 static int LmdbTx_Commit(lua_State *L);
 static int LmdbTx__Dbi(lua_State *L);
 static int LmdbTx_Delete(lua_State *L);
+static int LmdbTx__Dump(lua_State *L);
 static int LmdbTx_Get(lua_State *L);
 static int LmdbTx_Put(lua_State *L);
 static int LmdbTx_Order(lua_State *L);
@@ -105,6 +106,7 @@ static char *GetLmdbKeyFromLua(lua_State *L, size_t *len, int idx, int last);
 static char *GenerateLuaDbKey(int *err, size_t *len, const char **keys, size_t *lens, char *types, int elems);
 static const char *NextKeySegment(const char *key, size_t keylen, size_t pfxlen, size_t *len, int *type);
 static bool PushValueByType(lua_State *L, const char *val, size_t len, int type);
+static char *CreateKeyDumpString(MDB_val *key);
 static int LuaDbOrderTxClosure(lua_State *L);
 static bool CreateLmdbEnvMetatable(lua_State *L);
 static bool CreateLmdbTxMetatable(lua_State *L);
@@ -145,6 +147,7 @@ static luaL_Reg lmdb_tx_methods[] = {
         { "_dbi", LmdbTx__Dbi},
         { "commit", LmdbTx_Commit},
         { "delete", LmdbTx_Delete},
+        { "_dump", LmdbTx__Dump},
         { "get", LmdbTx_Get},
         { "put", LmdbTx_Put},
         { "order", LmdbTx_Order},
@@ -647,6 +650,48 @@ static int LmdbTx_Delete(lua_State *L) {
     return 1;
 }
 
+static int LmdbTx__Dump(lua_State *L) {
+    LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
+
+    // Open a new cursor
+    MDB_cursor *cur;
+    MDB_cursor_op op = MDB_NEXT;
+    MDB_val key;
+    int err = mdb_cursor_open(loc->txn, loc->dbi, &cur);
+    if (err != 0) {
+        luaL_error(L, "%s", mdb_strerror(err));
+        return 0;
+    }
+
+    // Generate the prefix if there is one
+    size_t pfxlen;
+    char *prefix = GetLmdbKeyFromLua(L, &pfxlen, 2, lua_gettop(L));
+    if (pfxlen > 0) {
+        op = MDB_SET_RANGE;
+        key.mv_size = pfxlen;
+        key.mv_data = prefix;
+    }
+
+    // Get the key and value from the db
+    MDB_val val;
+    while ((mdb_cursor_get(cur, &key, &val, op)) != MDB_NOTFOUND) {
+        // If given a prefix, make sure we stop once we loop past it
+        if ((pfxlen > 0) &&
+            (strncmp(prefix, (char *)key.mv_data, pfxlen) != 0)) {
+            break;
+        }
+
+        // Create the key and print the k/v pair
+        char *keystr = CreateKeyDumpString(&key);
+        printf("%s = %*s\n", keystr, (int)val.mv_size, (char*)val.mv_data);
+        free(keystr);
+        op = MDB_NEXT;
+    }
+
+    mdb_cursor_close(cur);
+    return 0;
+}
+
 static int LmdbTx_Get(lua_State *L) {
     LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
     MDB_val key;
@@ -1127,9 +1172,9 @@ static char *GetLmdbKeyFromLua(lua_State *L, size_t *len, int idx, int last) {
 // The array is a character array of this form:
 // key = {
 //     {
-//         [0] = length, `n`, as unsigned char,
+//         [0] = length of segment, `n`, as unsigned char,
 //         [1] = type as unsigned char,
-//         [2-n] = value
+//         [2-n] = segment value (all values except boolean are stored as strings)
 //     },
 //     { ... },
 //     { ... }
@@ -1211,6 +1256,73 @@ static bool PushValueByType(lua_State *L, const char *val, size_t len, int type)
         default:
             return false;
     }
+}
+
+// Produce a key dump string of a Lua DB key for debugging purposes
+static char *CreateKeyDumpString(MDB_val *key) {
+    assert(key);
+
+    size_t len = key->mv_size * 2;
+    size_t remaining = len;
+    char *str = malloc(len);
+    if (!str) {
+        return NULL;
+    }
+
+    // Create the beginning of the string
+    str[0] = '[';
+    char *cur = &str[1];
+
+    // Iterate on each individual key segment
+    size_t seglen;
+    for (size_t i = 0; i < key->mv_size; i += (seglen + 2)) {
+        // Read metadata from the key segment
+        unsigned char *data = &key->mv_data[i];
+        seglen = (size_t)(data[0]);
+        unsigned char type = data[1];
+
+        // Determine format string and length
+        const char *fmt;
+        size_t estimate;
+        switch (type) {
+            case LMDB_BOOLEAN_CHAR:
+                fmt = ((int) data[2]) ? "true, " : "false, ";
+                estimate = ((int) data[2]) ? 6 : 7;
+                break;
+            case LMDB_NUMERIC_CHAR:     // Fall through
+            case LMDB_INTEGER_CHAR:
+                fmt = "%.*s, ";
+                estimate = seglen + 2;
+                break;
+            case LMDB_STRING_CHAR:
+                fmt = "\"%.*s\", ";
+                estimate = seglen + 4;
+                break;
+            default:
+                continue;
+        }
+
+        // Reallocate the buffer if we run out of space
+        if (remaining >= estimate) {
+            size_t offset = (cur - str);    // Cache the cur offset
+            size_t newlen = (len * 2);
+            str = realloc(str, newlen);
+            if (!str) { return NULL; }
+            cur = (str + offset);           // Reset cur to the previous offset
+            remaining = (newlen - offset);  // Determine the new remainder
+        }
+
+        // Print into the string buffer
+        int diff = sprintf(cur, fmt, seglen, &data[2]);
+        cur += diff;
+        remaining -= diff;
+    }
+
+    // NUL-terminate the string before returning
+    cur = cur - 2;
+    cur[0] = ']';
+    cur[1] = '\0';
+    return str;
 }
 
 // Emulate the $ORDER function from MUMPS. Iterate over the keys in
