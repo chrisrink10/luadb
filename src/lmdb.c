@@ -600,32 +600,6 @@ static int LmdbTx_Commit(lua_State *L) {
     return 1;
 }
 
-static int lmdb_tx_cursor(lua_State *L) {
-    LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
-
-    MDB_cursor *cur;
-    int err = mdb_cursor_open(loc->txn, loc->dbi, &cur);
-    if (err != 0) {
-        luaL_error(L, "%s", mdb_strerror(err));
-        return 0;
-    }
-
-    // Generate the given prefix
-    size_t len;
-    char *pfx = GetLmdbKeyFromLua(L, &len, 2, lua_gettop(L));
-
-    // Get a full userdatum
-    LuaDB_LmdbCursor *curloc = lua_newuserdata(L, sizeof(LuaDB_LmdbCursor));
-    curloc->cur = cur;
-    curloc->prefix = pfx;
-
-    // Set the Env metatable
-    luaL_getmetatable(L, LMDB_CURSOR_REGISTRY_NAME);
-    lua_setmetatable(L, -2);
-
-    return 1;
-}
-
 static int LmdbTx_Delete(lua_State *L) {
     LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
     MDB_val key;
