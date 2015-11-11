@@ -539,7 +539,7 @@ static int LmdbEnv__Uuid(lua_State *L) {
 
 static int LmdbTx_ToString(lua_State *L) {
     LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
-    lua_pushfstring(L, "lmdb.Tx(%u)", loc->dbi);
+    lua_pushfstring(L, "lmdb.Tx(%I)", loc->dbi);
     return 1;
 }
 
@@ -730,7 +730,7 @@ static int LmdbTx_Order(lua_State *L) {
 
 static int LmdbTx__Dbi(lua_State *L) {
     LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
-    lua_pushnumber(L, loc->dbi);
+    lua_pushinteger(L, loc->dbi);
     return 1;
 }
 
