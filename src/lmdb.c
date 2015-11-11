@@ -84,11 +84,13 @@ static int LmdbEnv__Uuid(lua_State *L);
 static int LmdbTx_ToString(lua_State *L);
 static int LmdbTx_Close(lua_State *L);
 static int LmdbTx_Commit(lua_State *L);
+static int LmdbTx_Data(lua_State *L);
 static int LmdbTx__Dbi(lua_State *L);
 static int LmdbTx_Delete(lua_State *L);
 static int LmdbTx__Dump(lua_State *L);
 static int LmdbTx_Get(lua_State *L);
 static int LmdbTx_Put(lua_State *L);
+static int LmdbTx_Next(lua_State *L);
 static int LmdbTx_Order(lua_State *L);
 
 static int Lmdb_OrderClose(lua_State *L);
@@ -107,6 +109,7 @@ static char *GenerateLuaDbKey(int *err, size_t *len, const char **keys, size_t *
 static const char *NextKeySegment(const char *key, size_t keylen, size_t pfxlen, size_t *len, int *type);
 static bool PushValueByType(lua_State *L, const char *val, size_t len, int type);
 static char *CreateKeyDumpString(MDB_val *key);
+static const char *FirstDifferentKeyNode(const char *prefix, size_t pfxlen, const MDB_val *key, size_t *outlen, int *type);
 static int LuaDbOrderTxClosure(lua_State *L);
 static bool CreateLmdbEnvMetatable(lua_State *L);
 static bool CreateLmdbTxMetatable(lua_State *L);
@@ -144,12 +147,14 @@ static luaL_Reg lmdb_tx_methods[] = {
         { "__gc",     LmdbTx_Close},
         { "__tostring", LmdbTx_ToString},
         { "close",    LmdbTx_Close},
-        { "_dbi", LmdbTx__Dbi},
         { "commit", LmdbTx_Commit},
+        { "data", LmdbTx_Data},
+        { "_dbi", LmdbTx__Dbi},
         { "delete", LmdbTx_Delete},
         { "_dump", LmdbTx__Dump},
         { "get", LmdbTx_Get},
         { "put", LmdbTx_Put},
+        { "next", LmdbTx_Next},
         { "order", LmdbTx_Order},
         { "rollback", LmdbTx_Close},
         { NULL, NULL },
@@ -600,6 +605,11 @@ static int LmdbTx_Commit(lua_State *L) {
     return 1;
 }
 
+static int LmdbTx_Data(lua_State *L) {
+    // TODO: add this body
+    return 0;
+}
+
 static int LmdbTx_Delete(lua_State *L) {
     LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
     MDB_val key;
@@ -714,6 +724,61 @@ static int LmdbTx_Put(lua_State *L) {
         return 0;
     }
     return 0;
+}
+
+static int LmdbTx_Next(lua_State *L) {
+    LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
+
+    // Open a new cursor
+    MDB_cursor *cur;
+    int err = mdb_cursor_open(loc->txn, loc->dbi, &cur);
+    if (err != 0) {
+        luaL_error(L, "%s", mdb_strerror(err));
+        return 0;
+    }
+
+    // Generate the prefix if there is one
+    size_t pfxlen;
+    char *prefix = GetLmdbKeyFromLua(L, &pfxlen, 2, lua_gettop(L));
+
+    // Skip to the next node at the same depth
+    do {
+        MDB_val key;
+        MDB_cursor_op op = MDB_SET_RANGE;
+        if (pfxlen > 0) {
+            key.mv_size = pfxlen;
+            key.mv_data = prefix;
+        } else {
+            op = MDB_FIRST;
+        }
+
+        // Get the key and value from the db
+        MDB_val val;
+        if ((mdb_cursor_get(cur, &key, &val, op)) == MDB_NOTFOUND) {
+            lua_pushnil(L);
+            goto LmdbTx_Next_Close;
+        }
+
+        // Verify either that we have no prefix or that we've found a mismatch
+        if ((pfxlen == 0) ||
+                (strncmp(prefix, (char *) key.mv_data, pfxlen) != 0)) {
+            size_t len;
+            int type;
+            const char *seg = FirstDifferentKeyNode(prefix, pfxlen, &key, &len, &type);
+            if ((!seg) || (!PushValueByType(L, seg, len, type))) {
+                lua_pushnil(L);
+            }
+            goto LmdbTx_Next_Close;
+        } else {
+            // Change the last character in the prefix to range to the
+            // next valid key
+            prefix[pfxlen-1]++;
+        }
+    } while(true);
+
+LmdbTx_Next_Close:
+    mdb_cursor_close(cur);
+    return 1;
 }
 
 static int LmdbTx_Order(lua_State *L) {
@@ -1297,6 +1362,45 @@ static char *CreateKeyDumpString(MDB_val *key) {
     cur[0] = ']';
     cur[1] = '\0';
     return str;
+}
+
+// Given a prefix and a key, return the first node value in key which differs
+// from the prefix.
+static const char *FirstDifferentKeyNode(const char *prefix, size_t pfxlen, const MDB_val *key, size_t *outlen, int *type) {
+    assert(key);
+
+    // For no prefix, the first node different is always the first node
+    if (pfxlen == 0) {
+        unsigned char *data = &key->mv_data[0];
+        *outlen = (size_t) (data[0]);
+        *type = data[1];
+        return (const char *)&data[2];
+    }
+
+    // Iterate on each individual key segment
+    size_t seglen;
+    for (size_t i = 0; (i < key->mv_size) && (i < pfxlen); i += (seglen + 2)) {
+        // Read metadata from the prefix segment
+        unsigned const char *pfxdata = (unsigned const char *)prefix;
+        size_t pfxseglen = (size_t) (pfxdata[0]);
+        unsigned char pfxtype = pfxdata[1];
+
+        // Read metadata from the key segment
+        unsigned char *data = &key->mv_data[i];
+        seglen = (size_t) (data[0]);
+        unsigned char datatype = data[1];
+
+        // Identify if this segment is different
+        if ((pfxseglen != seglen) ||
+                (pfxtype != datatype) ||
+                (memcmp(&pfxdata[2], &data[2], pfxlen) != 0)) {
+            *outlen = seglen;
+            *type = datatype;
+            return (const char *)&data[2];
+        }
+    }
+
+    return NULL;
 }
 
 // Emulate the $ORDER function from MUMPS. Iterate over the keys in
