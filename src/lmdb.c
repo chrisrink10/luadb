@@ -107,6 +107,7 @@ static bool CreateLmdbEnvMetatable(lua_State *L);
 static bool CreateLmdbTxMetatable(lua_State *L);
 static bool CreateLmdbCursorMetatable(lua_State *L);
 
+static int CompareKeys(const MDB_val *a, const MDB_val *b);
 static char *GenerateLuaDbKey(int *err, size_t *len, const char **keys, size_t *lens, char *types, size_t elems);
 static char *CreateKeyDumpString(MDB_val *key);
 static const char *FindFirstDifferentKeyNode(const char *prefix, size_t pfxlen, const MDB_val *key, size_t *outlen, int *type);
@@ -312,6 +313,15 @@ static int LmdbEnv_BeginTx(lua_State *L) {
         RemoveTxFromLmdbEnvRefTable(L, NULL, txn, idx);
         mdb_txn_abort(txn);
         luaL_error(L, "could not create a database handle");
+        return 0;
+    }
+
+    // Set the key comparator
+    err = mdb_set_compare(loc->txn, loc->dbi, CompareKeys);
+    if (err != 0) {
+        RemoveTxFromLmdbEnvRefTable(L, NULL, txn, idx);
+        mdb_txn_abort(txn);
+        luaL_error(L, "error setting key comparison function");
         return 0;
     }
     return 1;
@@ -1370,6 +1380,30 @@ static bool CreateLmdbCursorMetatable(lua_State *L) {
 /*
  * PRIVATE KEY UTILITY FUNCTIONS
  */
+
+// Compare two LuaDB keys lexically.
+static int CompareKeys(const MDB_val *a, const MDB_val *b) {
+    size_t aseglen;
+    size_t bseglen;
+
+    for (size_t i = 0, j = 0;
+         (i < a->mv_size) && (j < b->mv_size);
+         (i += (aseglen + 2)), (j += (bseglen + 2))) {
+        aseglen = GetSegmentLength(&a->mv_data[i]);
+        bseglen = GetSegmentLength(&b->mv_data[i]);
+        size_t min = (aseglen >= bseglen) ? bseglen : aseglen;
+        const char *adata = GetSegmentData(&a->mv_data[i]);
+        const char *bdata = GetSegmentData(&b->mv_data[i]);
+        int cmp = strncmp(adata, bdata, min);
+        if (cmp != 0) { return cmp; }
+        if (aseglen > bseglen) { return 1; }
+        if (bseglen > aseglen) { return -1; }
+    }
+
+    if (a->mv_size > b->mv_size) { return 1; }
+    if (b->mv_size > a->mv_size) { return -1; }
+    return 0;
+}
 
 // Create an LuaDB key given a series of character arrays of given sizes.
 //
