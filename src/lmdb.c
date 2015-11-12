@@ -52,17 +52,13 @@ typedef struct LuaDB_LmdbTx {
     MDB_dbi dbi;
 } LuaDB_LmdbTx;
 
-// LMDB Cursor type
-typedef struct LuaDB_LmdbCursor {
-    MDB_cursor *cur;
-    char *prefix;
-} LuaDB_LmdbCursor;
-
 // LMDB Order type cursor
 typedef struct LuaDB_LmdbOrder {
     MDB_cursor *cur;
     char *prefix;
     size_t pfxlen;
+    char *last;
+    size_t lastlen;
     MDB_cursor_op op;
 } LuaDB_LmdbOrder;
 
@@ -105,15 +101,23 @@ static void AddTxToLmdbEnvRefTable(lua_State *L, MDB_env *env, MDB_txn *txn, int
 static void RemoveTxFromLmdbEnvRefTable(lua_State *L, MDB_env *env, MDB_txn *txn, int idx);
 static char *CreateLmdbEnvRefTable(lua_State *L);
 static char *GetLmdbKeyFromLua(lua_State *L, size_t *len, int idx, int last);
-static char *GenerateLuaDbKey(int *err, size_t *len, const char **keys, size_t *lens, char *types, int elems);
-static const char *NextKeySegment(const char *key, size_t keylen, size_t pfxlen, size_t *len, int *type);
 static bool PushValueByType(lua_State *L, const char *val, size_t len, int type);
-static char *CreateKeyDumpString(MDB_val *key);
-static const char *FirstDifferentKeyNode(const char *prefix, size_t pfxlen, const MDB_val *key, size_t *outlen, int *type);
 static int LuaDbOrderTxClosure(lua_State *L);
 static bool CreateLmdbEnvMetatable(lua_State *L);
 static bool CreateLmdbTxMetatable(lua_State *L);
 static bool CreateLmdbCursorMetatable(lua_State *L);
+
+static char *GenerateLuaDbKey(int *err, size_t *len, const char **keys, size_t *lens, char *types, size_t elems);
+static char *CreateKeyDumpString(MDB_val *key);
+static const char *FindFirstDifferentKeyNode(const char *prefix, size_t pfxlen, const MDB_val *key, size_t *outlen, int *type);
+static inline char *ComputeNextLexicalValue(char *val, size_t len);
+static char *ReplaceLastKeySegment(const char *key, size_t keylen, size_t *newlen, size_t seglen, int type, const char *seg);
+static const char *FindLastKeySegment(const char *key, size_t len);
+static char *GetKeyPrefix(const char *key, size_t len, size_t *pfxlen);
+static inline void SetSegment(char *dest, size_t len, int type, const char *data);
+static inline size_t GetSegmentLength(const char *seg);
+static inline int GetSegmentType(const char *seg);
+static inline const char *GetSegmentData(const char *seg);
 
 // Library functions
 static luaL_Reg lmdb_lib_funcs[] = {
@@ -764,7 +768,8 @@ static int LmdbTx_Next(lua_State *L) {
                 (strncmp(prefix, (char *) key.mv_data, pfxlen) != 0)) {
             size_t len;
             int type;
-            const char *seg = FirstDifferentKeyNode(prefix, pfxlen, &key, &len, &type);
+            const char *seg = FindFirstDifferentKeyNode(prefix, pfxlen, &key,
+                                                        &len, &type);
             if ((!seg) || (!PushValueByType(L, seg, len, type))) {
                 lua_pushnil(L);
             }
@@ -772,7 +777,7 @@ static int LmdbTx_Next(lua_State *L) {
         } else {
             // Change the last character in the prefix to range to the
             // next valid key
-            prefix[pfxlen-1]++;
+            prefix = ComputeNextLexicalValue(prefix, pfxlen);
         }
     } while(true);
 
@@ -793,13 +798,17 @@ static int LmdbTx_Order(lua_State *L) {
 
     // Generate the given prefix
     size_t len;
-    char *pfx = GetLmdbKeyFromLua(L, &len, 2, lua_gettop(L));
+    char *last = GetLmdbKeyFromLua(L, &len, 2, lua_gettop(L));
+    size_t pfxlen;
+    char *pfx = GetKeyPrefix(last, len, &pfxlen);
 
     // Get a full userdatum
     LuaDB_LmdbOrder *curloc = lua_newuserdata(L, sizeof(LuaDB_LmdbOrder));
     curloc->cur = cur;
     curloc->prefix = pfx;
-    curloc->pfxlen = len;
+    curloc->pfxlen = pfxlen;
+    curloc->last = (len > 0) ? ComputeNextLexicalValue(last, len) : NULL;
+    curloc->lastlen = len;
     curloc->op = MDB_SET_RANGE;
 
     // Set the Cursor metatable
@@ -839,7 +848,7 @@ static int Lmdb_OrderClose(lua_State *L) {
 }
 
 /*
- * PRIVATE UTILITY FUNCTIONS
+ * PRIVATE LUA UTILITY FUNCTIONS
  */
 
 // Create a new MDB_env with the given options.
@@ -1156,6 +1165,7 @@ static void RemoveTxFromLmdbEnvRefTable(lua_State *L, MDB_env *env, MDB_txn *txn
 static char *GetLmdbKeyFromLua(lua_State *L, size_t *len, int idx, int last) {
     assert(L);
     int elems = last - idx + 1;
+    assert(elems >= 0);
     const char *keys[elems];
     size_t lens[elems];
     char types[elems];
@@ -1198,7 +1208,7 @@ static char *GetLmdbKeyFromLua(lua_State *L, size_t *len, int idx, int last) {
     }
 
     int err;
-    char *tkey = GenerateLuaDbKey(&err, len, keys, lens, types, elems);
+    char *tkey = GenerateLuaDbKey(&err, len, keys, lens, types, (size_t)elems);
     if (err) {
         luaL_error(L, "could not allocate memory for key");
         return NULL;
@@ -1206,57 +1216,16 @@ static char *GetLmdbKeyFromLua(lua_State *L, size_t *len, int idx, int last) {
     return tkey;
 }
 
-// Create an LuaDB key given a series of character arrays of given sizes.
-//
-// The array is a character array of this form:
-// key = {
-//     {
-//         [0] = length of segment, `n`, as unsigned char,
-//         [1] = type as unsigned char,
-//         [2-n] = segment value (all values except boolean are stored as strings)
-//     },
-//     { ... },
-//     { ... }
-// }
-static char *GenerateLuaDbKey(int *err, size_t *len, const char **keys, size_t *lens, char *types, int elems) {
-    char *tkey = NULL;
-    *err = 0;
-
-    // Allocate memory for the new key
-    *len = *len + (elems * 2);
-    tkey = malloc(*len);
-    if (!tkey) {
-        *err = 1;
-        return NULL;
-    }
-
-    // Generate the new key
-    int keyidx = 0;
-    for (int i = 0; i < elems; i++) {
-        tkey[keyidx] = (unsigned char)lens[i];
-        tkey[keyidx+1] = (unsigned char)types[i];
-        memcpy(&tkey[keyidx+2], keys[i], lens[i]);
-        keyidx += lens[i] + 2;
-    }
-
-    return tkey;
-}
-
-// Given a key and a prefix, return the next single key segment.
-//
-// The return value is merely the pointer offset within the given
-// key value, so the caller should NOT free this value.
-static const char *NextKeySegment(const char *key, size_t keylen, size_t pfxlen, size_t *len, int *type) {
-    if (pfxlen >= keylen) { return NULL; }
-    *len = (size_t)key[pfxlen];
-    *type = (int)key[pfxlen+1];
-    return &key[pfxlen+2];
-}
-
 // Accept a generic type of data, scan it into a value, and push
 // that value onto the stack. Note that the type specified by the
 // `type` parameter refers to the LMDB type, not the LUA_T* values.
 static bool PushValueByType(lua_State *L, const char *val, size_t len, int type) {
+#ifdef _WIN32
+    #define luadb_sscanf __mingw_sscanf
+#else
+    #define luadb_sscanf sscanf
+#endif
+
     // Determine which data type to push back onto the stack
     switch(type) {
         case LMDB_STRING_CHAR:
@@ -1264,143 +1233,25 @@ static bool PushValueByType(lua_State *L, const char *val, size_t len, int type)
             return true;
         case LMDB_NUMERIC_CHAR: {
             lua_Number f;
-#ifdef _WIN32
-            __mingw_sscanf(val, "%lf", &f);
-#else
-            sscanf(val, "%lf", &f);
-#endif
+            luadb_sscanf(val, "%lf", &f);
             lua_pushnumber(L, f);
             return true;
         }
         case LMDB_INTEGER_CHAR: {
             lua_Integer i;
-#ifdef _WIN32
-            __mingw_sscanf(val, "%lld", &i);
-#else
-            sscanf(val, "%lld", &i);
-#endif
+            luadb_sscanf(val, "%lld", &i);
             lua_pushinteger(L, i);
             return true;
         }
         case LMDB_BOOLEAN_CHAR: {
             int b;
-#ifdef _WIN32
-            __mingw_sscanf(val, "%d", &b);
-#else
-            sscanf(val, "%d", &b);
-#endif
+            luadb_sscanf(val, "%d", &b);
             lua_pushboolean(L, b);
             return true;
         }
         default:
             return false;
     }
-}
-
-// Produce a key dump string of a Lua DB key for debugging purposes
-static char *CreateKeyDumpString(MDB_val *key) {
-    assert(key);
-
-    size_t len = key->mv_size * 2;
-    size_t remaining = len;
-    char *str = malloc(len);
-    if (!str) {
-        return NULL;
-    }
-
-    // Create the beginning of the string
-    str[0] = '[';
-    char *cur = &str[1];
-
-    // Iterate on each individual key segment
-    size_t seglen;
-    for (size_t i = 0; i < key->mv_size; i += (seglen + 2)) {
-        // Read metadata from the key segment
-        unsigned char *data = &key->mv_data[i];
-        seglen = (size_t)(data[0]);
-        unsigned char type = data[1];
-
-        // Determine format string and length
-        const char *fmt;
-        size_t estimate;
-        switch (type) {
-            case LMDB_BOOLEAN_CHAR:
-                fmt = ((int) data[2]) ? "true, " : "false, ";
-                estimate = ((int) data[2]) ? 6 : 7;
-                break;
-            case LMDB_NUMERIC_CHAR:     // Fall through
-            case LMDB_INTEGER_CHAR:
-                fmt = "%.*s, ";
-                estimate = seglen + 2;
-                break;
-            case LMDB_STRING_CHAR:
-                fmt = "\"%.*s\", ";
-                estimate = seglen + 4;
-                break;
-            default:
-                continue;
-        }
-
-        // Reallocate the buffer if we run out of space
-        if (remaining >= estimate) {
-            size_t offset = (cur - str);    // Cache the cur offset
-            size_t newlen = (len * 2);
-            str = realloc(str, newlen);
-            if (!str) { return NULL; }
-            cur = (str + offset);           // Reset cur to the previous offset
-            remaining = (newlen - offset);  // Determine the new remainder
-        }
-
-        // Print into the string buffer
-        int diff = sprintf(cur, fmt, seglen, &data[2]);
-        cur += diff;
-        remaining -= diff;
-    }
-
-    // NUL-terminate the string before returning
-    cur = cur - 2;
-    cur[0] = ']';
-    cur[1] = '\0';
-    return str;
-}
-
-// Given a prefix and a key, return the first node value in key which differs
-// from the prefix.
-static const char *FirstDifferentKeyNode(const char *prefix, size_t pfxlen, const MDB_val *key, size_t *outlen, int *type) {
-    assert(key);
-
-    // For no prefix, the first node different is always the first node
-    if (pfxlen == 0) {
-        unsigned char *data = &key->mv_data[0];
-        *outlen = (size_t) (data[0]);
-        *type = data[1];
-        return (const char *)&data[2];
-    }
-
-    // Iterate on each individual key segment
-    size_t seglen;
-    for (size_t i = 0; (i < key->mv_size) && (i < pfxlen); i += (seglen + 2)) {
-        // Read metadata from the prefix segment
-        unsigned const char *pfxdata = (unsigned const char *)prefix;
-        size_t pfxseglen = (size_t) (pfxdata[0]);
-        unsigned char pfxtype = pfxdata[1];
-
-        // Read metadata from the key segment
-        unsigned char *data = &key->mv_data[i];
-        seglen = (size_t) (data[0]);
-        unsigned char datatype = data[1];
-
-        // Identify if this segment is different
-        if ((pfxseglen != seglen) ||
-                (pfxtype != datatype) ||
-                (memcmp(&pfxdata[2], &data[2], pfxlen) != 0)) {
-            *outlen = seglen;
-            *type = datatype;
-            return (const char *)&data[2];
-        }
-    }
-
-    return NULL;
 }
 
 // Emulate the $ORDER function from MUMPS. Iterate over the keys in
@@ -1417,39 +1268,42 @@ static int LuaDbOrderTxClosure(lua_State *L) {
 
     MDB_val key;
     MDB_val val;
-    int err;
+    cur->op = MDB_SET_RANGE;
 
     // Set our range to the given prefix
-    if (cur->op == MDB_SET_RANGE) {
-        key.mv_size = cur->pfxlen;
-        key.mv_data = cur->prefix;
+    if (cur->lastlen > 0) {
+        key.mv_size = cur->lastlen;
+        key.mv_data = cur->last;
+    } else {
+        cur->op = MDB_FIRST;
     }
 
-    // Get the value
-    err = mdb_cursor_get(cur->cur, &key, &val, cur->op);
-
-    // Check if LDMB is reporting that it is not found
-    if (err == MDB_NOTFOUND) {
+    // Get the key stored in the database
+    if (mdb_cursor_get(cur->cur, &key, &val, cur->op) != 0) {
         return 0;
     }
 
-    // Verify that we're on the right prefix and we didn't skip
-    if (strncmp(cur->prefix, (char *)key.mv_data, cur->pfxlen) != 0) {
+    // Verify that this prefix matches (if we had a prefix)
+    if ((cur->pfxlen > 0) &&
+            (strncmp(cur->prefix, (char *) key.mv_data, cur->pfxlen) != 0)) {
         return 0;
     }
 
-    // Get the next value and push it onto the Lua stack
+    // Get the next segment and push it onto the Lua stack
     size_t len;
     int type;
-    const char *seg = NextKeySegment((char *) key.mv_data, key.mv_size,
-                                     cur->pfxlen, &len, &type);
-    if (!seg) { return 0; }
+    const char *seg = FindFirstDifferentKeyNode(cur->prefix, cur->pfxlen,
+                                                &key, &len, &type);
+    if ((!seg) || (!PushValueByType(L, seg, len, type))) {
+        return 0;
+    }
 
-    // Push the generic value onto the stack
-    if (!PushValueByType(L, seg, len, type)) { return 0; }
+    // Swap out the previous visited node with the current
+    char *new = ReplaceLastKeySegment(cur->last, cur->lastlen,
+                                      &cur->lastlen, len, type, seg);
+    free(cur->last);
+    cur->last = ComputeNextLexicalValue(new, cur->lastlen);
 
-    // Move to the next element continuously now
-    cur->op = MDB_NEXT;
     return 1;
 }
 
@@ -1511,4 +1365,249 @@ static bool CreateLmdbCursorMetatable(lua_State *L) {
     // Attach the methods to this table
     luaL_setfuncs(L, lmdb_cursor_methods, 0);
     return true;
+}
+
+/*
+ * PRIVATE KEY UTILITY FUNCTIONS
+ */
+
+// Create an LuaDB key given a series of character arrays of given sizes.
+//
+// The array is a character array of this form:
+// key = {
+//     {
+//         [0] = length of segment, `n`, as unsigned char,
+//         [1] = type as unsigned char,
+//         [2-n] = segment value (all values except boolean are stored as strings)
+//     },
+//     { ... },
+//     { ... }
+// }
+static char *GenerateLuaDbKey(int *err, size_t *len, const char **keys, size_t *lens, char *types, size_t elems) {
+    char *tkey = NULL;
+    *err = 0;
+
+    // Allocate memory for the new key
+    *len = *len + (elems * 2);
+    tkey = malloc(*len);
+    if (!tkey) {
+        *err = 1;
+        return NULL;
+    }
+
+    // Generate the new key
+    int keyidx = 0;
+    for (int i = 0; i < elems; i++) {
+        SetSegment(&tkey[keyidx], lens[i], types[i], keys[i]);
+        keyidx += lens[i] + 2;
+    }
+
+    return tkey;
+}
+
+// Produce a key dump string of a Lua DB key for debugging purposes
+static char *CreateKeyDumpString(MDB_val *key) {
+    assert(key);
+
+    size_t len = key->mv_size * 2;
+    size_t remaining = len;
+    char *str = malloc(len);
+    if (!str) {
+        return NULL;
+    }
+
+    // Create the beginning of the string
+    str[0] = '[';
+    char *cur = &str[1];
+
+    // Iterate on each individual key segment
+    size_t seglen;
+    for (size_t i = 0; i < key->mv_size; i += (seglen + 2)) {
+        // Read metadata from the key segment
+        const char *seg = &(((const char *)key->mv_data)[i]);
+        seglen = GetSegmentLength(seg);
+        int type = GetSegmentType(seg);
+
+        // Determine format string and length
+        const char *fmt;
+        size_t estimate;
+        switch (type) {
+            case LMDB_BOOLEAN_CHAR:
+                fmt = ((int) seg[2]) ? "true, " : "false, ";
+                estimate = ((int) seg[2]) ? 6 : 7;
+                break;
+            case LMDB_NUMERIC_CHAR:     // Fall through
+            case LMDB_INTEGER_CHAR:
+                fmt = "%.*s, ";
+                estimate = seglen + 2;
+                break;
+            case LMDB_STRING_CHAR:
+                fmt = "\"%.*s\", ";
+                estimate = seglen + 4;
+                break;
+            default:
+                continue;
+        }
+
+        // Reallocate the buffer if we run out of space
+        if (remaining >= estimate) {
+            size_t offset = (cur - str);    // Cache the cur offset
+            size_t newlen = (len * 2);
+            str = realloc(str, newlen);
+            if (!str) { return NULL; }
+            cur = (str + offset);           // Reset cur to the previous offset
+            remaining = (newlen - offset);  // Determine the new remainder
+        }
+
+        // Print into the string buffer
+        const char *data = GetSegmentData(seg);
+        int diff = sprintf(cur, fmt, seglen, data);
+        assert(diff >= 0);
+        cur += diff;
+        remaining -= diff;
+    }
+
+    // NUL-terminate the string before returning
+    cur = cur - 2;
+    cur[0] = ']';
+    cur[1] = '\0';
+    return str;
+}
+
+// Given a prefix and a key, return the first node value in key which differs
+// from the prefix.
+static const char *FindFirstDifferentKeyNode(const char *prefix, size_t pfxlen, const MDB_val *key, size_t *outlen, int *type) {
+    assert(key);
+
+    // Iterate on each individual key segment
+    size_t seglen;
+    for (size_t i = 0; (i < key->mv_size); i += (seglen + 2)) {
+        // Handle no prefix OR perfect-match prefix
+        if (i >= pfxlen) {
+            *outlen = GetSegmentLength(&key->mv_data[i]);
+            *type = GetSegmentType(&key->mv_data[i]);
+            return GetSegmentData(&key->mv_data[i]);
+        }
+
+        // Read metadata from the prefix segment
+        const char *pfxseg = &prefix[i];
+        size_t pfxseglen = GetSegmentLength(pfxseg);
+        int pfxtype = GetSegmentType(pfxseg);
+
+        // Read metadata from the key segment
+        const char *seg = &(((const char *)key->mv_data)[i]);
+        seglen = GetSegmentLength(seg);
+        int segtype = GetSegmentType(seg);
+
+        // Identify if this segment is different
+        if ((pfxseglen != seglen) ||
+                (pfxtype != segtype) ||
+                (memcmp(GetSegmentData(pfxseg), GetSegmentData(seg), pfxseglen) != 0))
+        {
+            *outlen = seglen;
+            *type = segtype;
+            return GetSegmentData(seg);
+        }
+    }
+
+    return NULL;
+}
+
+// Given a string, modify the string to contain the next lexical value.
+static inline char *ComputeNextLexicalValue(char *val, size_t len) {
+    assert(val);
+    assert(len > 0);
+
+    val[len-1]++;
+    return val;
+}
+
+// Replace the last key segment in a given key
+static char *ReplaceLastKeySegment(const char *key, size_t keylen, size_t *newlen, size_t seglen, int type, const char *seg) {
+    // If there was no previous key, then return the given segment
+    if ((!key) || (keylen == 0)) {
+        *newlen = seglen + 2;
+        char *new = malloc(*newlen);
+        if (!new) {
+            *newlen = 0;
+            return NULL;
+        }
+        SetSegment(new, seglen, type, seg);
+        return new;
+    }
+
+    // Get a pointer to the last data segment
+    char *last = (char *)FindLastKeySegment(key, keylen);
+    if (!last) { return NULL; }
+
+    // Compute the new length and create a new key string
+    size_t lastlen = GetSegmentLength(last);
+    assert(keylen >= lastlen);
+    *newlen = (keylen - lastlen) + seglen;
+    char *new = malloc(*newlen);
+    if (!new) {
+        *newlen = 0;
+        return NULL;
+    }
+
+    // Copy in the base bytes and then set the new segment
+    memcpy(new, key, (keylen - lastlen));
+    SetSegment(&new[keylen - lastlen - 2], seglen, type, seg);
+
+    return new;
+}
+
+// Get a pointer to the final key segment (pointer points to the beginning
+// of the segment, not the data; the first character is the segment length
+// and the second is the segment type).
+static const char *FindLastKeySegment(const char *key, size_t len) {
+    const char *data = NULL;
+    size_t curlen;
+    for (size_t i = 0; (i < len); i += (curlen + 2)) {
+        data = &key[i];
+        curlen = GetSegmentLength(data);
+    }
+    return data;
+}
+
+// Get the prefix of a key (specifically: every key segment before the last).
+static char *GetKeyPrefix(const char *key, size_t len, size_t *pfxlen) {
+    const char *last = FindLastKeySegment(key, len);
+    if (!last) {
+        *pfxlen = 0;
+        return NULL;
+    }
+    *pfxlen = (size_t)(last - key);
+    char *prefix = malloc(*pfxlen);
+    if (!prefix) { return NULL; }
+    memcpy(prefix, key, *pfxlen);
+    return prefix;
+}
+
+// Set the value of a segment at the given destination.
+static inline void SetSegment(char *dest, size_t len, int type, const char *data) {
+    assert(dest);
+    assert(data);
+
+    dest[0] = (unsigned char)len;
+    dest[1] = (unsigned char)type;
+    memcpy(&dest[2], data, len);
+}
+
+// Get the length of the current segment
+static inline size_t GetSegmentLength(const char *seg) {
+    assert(seg);
+    return (size_t)seg[0];
+}
+
+// Get the type of the current segment
+static inline int GetSegmentType(const char *seg) {
+    assert(seg);
+    return (int)seg[1];
+}
+
+// Get a pointer to the current segment data
+static inline const char *GetSegmentData(const char *seg) {
+    assert(seg);
+    return &seg[2];
 }
