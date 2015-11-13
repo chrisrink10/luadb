@@ -44,6 +44,10 @@ static const char LMDB_INTEGER_TYPE = LMDB_INTEGER_CHAR;
 static const char LMDB_NUMERIC_TYPE = LMDB_NUMERIC_CHAR;
 static const char LMDB_STRING_TYPE = LMDB_STRING_CHAR;
 
+static const int LMDB_DATA_NO_DATA = 0;
+static const int LMDB_DATA_HAS_DATA = 1;
+static const int LMDB_DATA_HAS_CHILDREN = 10;
+
 /*
  * FORWARD DECLARATIONS
  */
@@ -625,8 +629,43 @@ static int LmdbTx_Commit(lua_State *L) {
 }
 
 static int LmdbTx_Data(lua_State *L) {
-    // TODO: add this body
-    return 0;
+    LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
+
+    // Open a new cursor
+    MDB_cursor *cur;
+    int err = mdb_cursor_open(loc->txn, loc->dbi, &cur);
+    if (err != 0) {
+        luaL_error(L, "%s", mdb_strerror(err));
+        return 0;
+    }
+
+    int response = LMDB_DATA_NO_DATA;
+    size_t klen;
+    char *kstr = GetLmdbKeyFromLua(L, &klen, 2, lua_gettop(L), true);
+
+    // Direct the cursor to the specified node to check if it has a value
+    MDB_val key;
+    MDB_val val;
+    key.mv_size = klen;
+    key.mv_data = kstr;
+    int keyfound = mdb_cursor_get(cur, &key, &val, MDB_SET);
+    if (keyfound == 0) { response += LMDB_DATA_HAS_DATA; }
+
+    // Direct the cursor to the next node to see if it is a child
+    int childfound = mdb_cursor_get(cur, &key, &val, MDB_NEXT);
+
+    // Verify that this prefix matches (if we had a prefix)
+    if ((klen > 0) && (strncmp(kstr, (char *) key.mv_data, klen) == 0)) {
+        if (childfound == 0) {
+            response += LMDB_DATA_HAS_CHILDREN;
+        }
+    }
+
+    // Push the response and clean up
+    lua_pushinteger(L, response);
+    free(kstr);
+    mdb_cursor_close(cur);
+    return 1;
 }
 
 static int LmdbTx_Delete(lua_State *L) {

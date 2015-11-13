@@ -186,6 +186,28 @@ function test_tx__dbi()
   tx:close()
 end
 
+function test_tx_data()
+  local tx1 = testdb:begin()
+  tx1:put("", "1A1")
+  tx1:put("", "1B1", "2B1")
+  tx1:put("", "1B1", "2B2")
+  tx1:put("", "1B1", "2B3")
+  tx1:put("", "1C1", "2C1")
+  tx1:put("", "1C1")
+  tx1:put("", "1D1", "2D1", "3D1")
+  tx1:put("", "1D1", "2D1", "3D2")
+  tx1:put("", "1D1", "2D1", "3D3")
+  tx1:put("", "1D1", "2D2")
+  tx1:commit()
+
+  local tx2 = testdb:begin(true)
+  lt:assert_equal(tx2:data("1A0"), 0)
+  lt:assert_equal(tx2:data("1A1"), 1)
+  lt:assert_equal(tx2:data("1D1", "2D1"), 10)
+  lt:assert_equal(tx2:data("1C1"), 11)
+  tx2:rollback()
+end
+
 -- Test that we can delete values and get them back
 function test_tx_delete()
   local tx1 = testdb:begin()
@@ -501,6 +523,7 @@ end)
 
 lt:add_case("txn", function()
   test_tx__dbi()
+  test_tx_data()
   test_tx_delete()
   test_tx_get()
   test_tx_put()

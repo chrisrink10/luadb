@@ -78,6 +78,11 @@ that scripts are suggested against long-running transactions.
 * `lmdb.Transaction` - A single LMDB transaction.
     * `lmdb.Transaction:commit()` - Commit any pending changes in the
       transaction.
+    * `lmdb.Transaction:data(...)` - Check to see if there is any data 
+      at the given node or any descendant nodes. Returns 0 if there is no
+      data or children, 1 if there is only data at the specified node, 10
+      if there are only children, and 11 if there is data and the node has
+      children.
     * `lmdb.Transaction:delete(...)` - Delete the value located at the
       given key.
     * `lmdb.Transaction:get(...)` - Get the value located at the given key.
