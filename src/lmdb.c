@@ -672,7 +672,7 @@ static int LmdbTx__Dump(lua_State *L) {
 
     // Get the key and value from the db
     MDB_val val;
-    while ((mdb_cursor_get(cur, &key, &val, op)) != MDB_NOTFOUND) {
+    while ((mdb_cursor_get(cur, &key, &val, op)) == 0) {
         // If given a prefix, make sure we stop once we loop past it
         if ((pfxlen > 0) &&
             (strncmp(prefix, (char *)key.mv_data, pfxlen) != 0)) {
