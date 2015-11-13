@@ -78,12 +78,23 @@ that scripts are suggested against long-running transactions.
 * `lmdb.Transaction` - A single LMDB transaction.
     * `lmdb.Transaction:commit()` - Commit any pending changes in the
       transaction.
+    * `lmdb.Transaction:data(...)` - Check to see if there is any data 
+      at the given node or any descendant nodes. Returns 0 if there is no
+      data or children, 1 if there is only data at the specified node, 10
+      if there are only children, and 11 if there is data and the node has
+      children.
     * `lmdb.Transaction:delete(...)` - Delete the value located at the
       given key.
     * `lmdb.Transaction:get(...)` - Get the value located at the given key.
     * `lmdb.Transaction:put(val, ...)` - Put the given value at the given key.
+    * `lmdb.Transaction:next(...)` - Like `order()` below, this function 
+      returns the next lexical node in a given node. Unlike, `order()` 
+      however, this function is _not_ an iterator.
     * `lmdb.Transaction:order(...)` - Order on keys with the given node or
-      nodes as a prefix. Returns the immediate next node value.
+      nodes as a prefix. Returns an iterator that can be used in a generic
+      `for` loop context.
+    * `lmdb.Transaction:iorder(...)` - Exactly the same as `order()` except
+      the first value in the return is an enumeration of the current iteration.
     * `lmdb.Transaction:rollback()` - Roll back any changes made in the
       transaction.
 
