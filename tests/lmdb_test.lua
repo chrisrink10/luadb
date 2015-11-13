@@ -14,8 +14,6 @@ local lt = LuaTest.new("lmdb")
 --[[ MODULE PRIVATE VARIABLES ]]--
 local testpath = "/Users/christopher/ClionProjects/luadb/bin/Debug/test"
 local testdb = nil
-local testtx = nil
-local testcur = nil
 local dbopts = {
   fixedmap = false,     -- Use fixed mmap
   nosubdir = false,     -- Do not use subdirectory
@@ -277,33 +275,171 @@ function test_tx_put()
   tx2 = nil
 end
 
+-- Test that we always retrieve the next lexical node
+function test_tx_next()
+  local tx1 = testdb:begin()
+  tx1:put("", "1A1")
+  tx1:put("", "1B1", "2B1")
+  tx1:put("", "1B1", "2B2")
+  tx1:put("", "1B1", "2B3")
+  tx1:put("", "1C1", "2C1")
+  tx1:put("", "1C1")
+  tx1:put("", "1D1", "2D1", "3D1")
+  tx1:put("", "1D1", "2D1", "3D2")
+  tx1:put("", "1D1", "2D1", "3D3")
+  tx1:put("", "1D1", "2D2")
+  tx1:commit()
+
+  local tx2 = testdb:begin(true)
+  lt:assert_not_equal(tx2:next(), nil)
+  lt:assert_equal(tx2:next("1A0"), "1A1")
+  lt:assert_equal(tx2:next("1A1"), "1B1")
+  lt:assert_equal(tx2:next("1B1"), "1C1")
+  lt:assert_equal(tx2:next("1C1"), "1D1")
+  lt:assert_equal(tx2:next("1A1", nil), nil)
+  lt:assert_equal(tx2:next("1B1", nil), "2B1")
+  lt:assert_equal(tx2:next("1B1", "2B1"), "2B2")
+  lt:assert_equal(tx2:next("1B1", "2B2"), "2B3")
+  lt:assert_equal(tx2:next("1B1", "2B3"), nil)
+  lt:assert_equal(tx2:next("1D1", "2D1", nil), "3D1")
+  lt:assert_equal(tx2:next("1D1", "2D1", "3D1"), "3D2")
+  lt:assert_equal(tx2:next("1D1", "2D1", "3D2"), "3D3")
+  lt:assert_equal(tx2:next("1D1", "2D1", "3D3"), nil)
+  tx2:rollback()
+end
+
 -- Test that we can iterate on key nodes
 function test_tx_order()
   local tx1 = testdb:begin()
-  local id = 1
-  tx1:put("crink",                  "user", id, "username")
-  tx1:put("fakepass",               "user", id, "pass")
-  tx1:put("2",                      "user", id, "email")
-  tx1:put("chrisrink10@gmail.com",  "user", id, "email", 1)
-  tx1:put("crink@fake.com",         "user", id, "email", 2)
+  tx1:put("", "1A1")
+  tx1:put("", "1B1", "2B1")
+  tx1:put("", "1B1", "2B2")
+  tx1:put("", "1B1", "2B3")
+  tx1:put("", "1C1", "2C1")
+  tx1:put("", "1C1")
+  tx1:put("", "1D1", "2D1", "3D1")
+  tx1:put("", "1D1", "2D1", "3D2")
+  tx1:put("", "1D1", "2D1", "3D3")
+  tx1:put("", "1D1", "2D2")
   tx1:commit()
-  tx1 = nil
 
-  local tx2 = testdb:begin()
-  local user = {
-    username = "crink",
-    pass = "fakepass",
-    email = "2",
-  }
-  local nodes = {}
+  local tx2 = testdb:begin(true)
 
-  for node in tx2:order("user", id) do
-    nodes[node] = tx2:get("user", id, node)
+  do
+    local expected = { "1A1", "1B1", "1C1", "1D1" }
+    local i = 1
+    for v in tx2:order("1A0") do
+      -- Make sure we don't iterate into other data in the database from other tests
+      if expected[i] == nil then
+        break
+      end
+
+      lt:assert_equal(expected[i], v)
+      i = i + 1
+    end
+    lt:assert_equal(#expected, i-1)
   end
 
-  lt:assert_table_equal(user, nodes)
-  tx2:close()
-  tx2 = nil
+  do
+    local expected = { "2B1", "2B2", "2B3" }
+    local i = 1
+    for v in tx2:order("1B1", nil) do
+      lt:assert_equal(expected[i], v)
+      i = i + 1
+    end
+    lt:assert_equal(#expected, i-1)
+  end
+
+  do
+    local expected = { "2C1" }
+    local i = 1
+    for v in tx2:order("1C1", nil) do
+      lt:assert_equal(expected[i], v)
+      i = i + 1
+    end
+    lt:assert_equal(#expected, i-1)
+  end
+
+  do
+    local expected = { "3D1", "3D2", "3D3" }
+    local i = 1
+    for v in tx2:order("1D1", "2D1", nil) do
+      lt:assert_equal(expected[i], v)
+      i = i + 1
+    end
+    lt:assert_equal(#expected, i-1)
+  end
+
+  tx2:rollback()
+end
+
+-- Test that we can iterate on key nodes (with enumeration)
+function test_tx_iorder()
+  local tx1 = testdb:begin()
+  tx1:put("", "1A1")
+  tx1:put("", "1B1", "2B1")
+  tx1:put("", "1B1", "2B2")
+  tx1:put("", "1B1", "2B3")
+  tx1:put("", "1C1", "2C1")
+  tx1:put("", "1C1")
+  tx1:put("", "1D1", "2D1", "3D1")
+  tx1:put("", "1D1", "2D1", "3D2")
+  tx1:put("", "1D1", "2D1", "3D3")
+  tx1:put("", "1D1", "2D2")
+  tx1:commit()
+
+  local tx2 = testdb:begin(true)
+
+  do
+    local expected = { "1A1", "1B1", "1C1", "1D1" }
+    local j = 1
+    for i, v in tx2:iorder("1A0") do
+      -- Make sure we don't iterate into other data in the database from other tests
+      if expected[i] == nil then
+        break
+      end
+
+      lt:assert_equal(i, j)
+      lt:assert_equal(expected[i], v)
+      j = j + 1
+    end
+    lt:assert_equal(#expected, j-1)
+  end
+
+  do
+    local expected = { "2B1", "2B2", "2B3" }
+    local j = 1
+    for i, v in tx2:iorder("1B1", nil) do
+      lt:assert_equal(i, j)
+      lt:assert_equal(expected[i], v)
+      j = j + 1
+    end
+    lt:assert_equal(#expected, j-1)
+  end
+
+  do
+    local expected = { "2C1" }
+    local j = 1
+    for i, v in tx2:iorder("1C1", nil) do
+      lt:assert_equal(i, j)
+      lt:assert_equal(expected[i], v)
+      j = j + 1
+    end
+    lt:assert_equal(#expected, j-1)
+  end
+
+  do
+    local expected = { "3D1", "3D2", "3D3" }
+    local j = 1
+    for i, v in tx2:iorder("1D1", "2D1", nil) do
+      lt:assert_equal(i, j)
+      lt:assert_equal(expected[i], v)
+      j = j + 1
+    end
+    lt:assert_equal(#expected, j-1)
+  end
+
+  tx2:rollback()
 end
 
 -- Test that values are not entered into the database if rolled back
@@ -339,11 +475,9 @@ end
 
 lt:add_setup(function()
   testdb = lmdb.open(testpath, dbopts)
-  -- testtx = testdb:begin()
 end)
 
 lt:add_teardown(function()
-  -- pcall(testtx.close, testtx)
   testdb:close()
   testdb = nil
 end)
@@ -370,12 +504,10 @@ lt:add_case("txn", function()
   test_tx_delete()
   test_tx_get()
   test_tx_put()
+  test_tx_next()
   test_tx_order()
+  test_tx_iorder()
   test_tx_rollback()
-end)
-
-lt:add_case("cursor", function()
-
 end)
 
 return lt
