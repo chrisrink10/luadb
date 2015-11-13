@@ -757,46 +757,48 @@ static int LmdbTx_Next(lua_State *L) {
     }
 
     // Generate the prefix if there is one
+    size_t klen;
+    char *kstr = GetLmdbKeyFromLua(L, &klen, 2, lua_gettop(L), true);
+    if (klen > 0) { kstr = ComputeNextLexicalValue(kstr, klen); }
     size_t pfxlen;
-    char *prefix = GetLmdbKeyFromLua(L, &pfxlen, 2, lua_gettop(L), true);
+    char *prefix = GetKeyPrefix(kstr, klen, &pfxlen);
 
     // Skip to the next node at the same depth
-    do {
-        MDB_val key;
-        MDB_cursor_op op = MDB_SET_RANGE;
-        if (pfxlen > 0) {
-            key.mv_size = pfxlen;
-            key.mv_data = prefix;
-        } else {
-            op = MDB_FIRST;
-        }
+    MDB_val key;
+    MDB_cursor_op op = MDB_SET_RANGE;
+    if (klen > 0) {
+        key.mv_size = klen;
+        key.mv_data = kstr;
+    } else {
+        op = MDB_FIRST;
+    }
 
-        // Get the key and value from the db
-        MDB_val val;
-        if ((mdb_cursor_get(cur, &key, &val, op)) == MDB_NOTFOUND) {
-            lua_pushnil(L);
-            goto LmdbTx_Next_Close;
-        }
+    // Get the key and value from the db
+    MDB_val val;
+    if ((mdb_cursor_get(cur, &key, &val, op)) != 0) {
+        lua_pushnil(L);
+        goto LmdbTx_Next_Close;
+    }
 
-        // Verify either that we have no prefix or that we've found a mismatch
-        if ((pfxlen == 0) ||
-                (strncmp(prefix, (char *) key.mv_data, pfxlen) != 0)) {
-            size_t len;
-            int type;
-            const char *seg = FindFirstDifferentKeyNode(prefix, pfxlen, &key,
-                                                        &len, &type);
-            if ((!seg) || (!PushValueByType(L, seg, len, type))) {
-                lua_pushnil(L);
-            }
-            goto LmdbTx_Next_Close;
-        } else {
-            // Change the last character in the prefix to range to the
-            // next valid key
-            prefix = ComputeNextLexicalValue(prefix, pfxlen);
-        }
-    } while(true);
+    // Verify that this prefix matches (if we had a prefix)
+    if ((pfxlen > 0) &&
+            (strncmp(prefix, (char *) key.mv_data, pfxlen) != 0)) {
+        lua_pushnil(L);
+        goto LmdbTx_Next_Close;
+    }
+
+    // Verify either that we have no prefix or that we've found a mismatch
+    size_t len;
+    int type;
+    const char *seg = FindFirstDifferentKeyNode(prefix, pfxlen,
+                                                &key, &len, &type);
+    if ((!seg) || (!PushValueByType(L, seg, len, type))) {
+        lua_pushnil(L);
+    }
 
 LmdbTx_Next_Close:
+    free(kstr);
+    free(prefix);
     mdb_cursor_close(cur);
     return 1;
 }
