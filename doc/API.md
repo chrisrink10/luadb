@@ -82,8 +82,14 @@ that scripts are suggested against long-running transactions.
       given key.
     * `lmdb.Transaction:get(...)` - Get the value located at the given key.
     * `lmdb.Transaction:put(val, ...)` - Put the given value at the given key.
+    * `lmdb.Transaction:next(...)` - Like `order()` below, this function 
+      returns the next lexical node in a given node. Unlike, `order()` 
+      however, this function is _not_ an iterator.
     * `lmdb.Transaction:order(...)` - Order on keys with the given node or
-      nodes as a prefix. Returns the immediate next node value.
+      nodes as a prefix. Returns an iterator that can be used in a generic
+      `for` loop context.
+    * `lmdb.Transaction:iorder(...)` - Exactly the same as `order()` except
+      the first value in the return is an enumeration of the current iteration.
     * `lmdb.Transaction:rollback()` - Roll back any changes made in the
       transaction.
 
