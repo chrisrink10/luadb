@@ -88,6 +88,7 @@ static int LmdbTx_Get(lua_State *L);
 static int LmdbTx_Put(lua_State *L);
 static int LmdbTx_Next(lua_State *L);
 static int LmdbTx_Order(lua_State *L);
+static int LmdbTx_IOrder(lua_State *L);
 
 static int Lmdb_OrderClose(lua_State *L);
 
@@ -102,6 +103,7 @@ static void RemoveTxFromLmdbEnvRefTable(lua_State *L, MDB_env *env, MDB_txn *txn
 static char *CreateLmdbEnvRefTable(lua_State *L);
 static char *GetLmdbKeyFromLua(lua_State *L, size_t *len, int idx, int last);
 static bool PushValueByType(lua_State *L, const char *val, size_t len, int type);
+static int CreateLuaDbOrderClosure(lua_State *L, bool with_enum);
 static int LuaDbOrderTxClosure(lua_State *L);
 static bool CreateLmdbEnvMetatable(lua_State *L);
 static bool CreateLmdbTxMetatable(lua_State *L);
@@ -161,6 +163,7 @@ static luaL_Reg lmdb_tx_methods[] = {
         { "put", LmdbTx_Put},
         { "next", LmdbTx_Next},
         { "order", LmdbTx_Order},
+        { "iorder", LmdbTx_IOrder},
         { "rollback", LmdbTx_Close},
         { NULL, NULL },
 };
@@ -797,38 +800,11 @@ LmdbTx_Next_Close:
 }
 
 static int LmdbTx_Order(lua_State *L) {
-    LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
+    return CreateLuaDbOrderClosure(L, false);
+}
 
-    MDB_cursor *cur;
-    int err = mdb_cursor_open(loc->txn, loc->dbi, &cur);
-    if (err != 0) {
-        luaL_error(L, "%s", mdb_strerror(err));
-        return 0;
-    }
-
-    // Generate the given prefix
-    size_t len;
-    char *last = GetLmdbKeyFromLua(L, &len, 2, lua_gettop(L));
-    size_t pfxlen;
-    char *pfx = GetKeyPrefix(last, len, &pfxlen);
-
-    // Get a full userdatum
-    LuaDB_LmdbOrder *curloc = lua_newuserdata(L, sizeof(LuaDB_LmdbOrder));
-    curloc->cur = cur;
-    curloc->prefix = pfx;
-    curloc->pfxlen = pfxlen;
-    curloc->last = (len > 0) ? ComputeNextLexicalValue(last, len) : NULL;
-    curloc->lastlen = len;
-    curloc->op = MDB_SET_RANGE;
-
-    // Set the Cursor metatable
-    luaL_getmetatable(L, LMDB_CURSOR_REGISTRY_NAME);
-    lua_setmetatable(L, -2);
-
-    // Push the private LuaDbOrderTxClosure function on the stack as a closure
-    // containing the previously declared cursor as it's upvalue
-    lua_pushcclosure(L, &LuaDbOrderTxClosure, 1);
-    return 1;
+static int LmdbTx_IOrder(lua_State *L) {
+    return CreateLuaDbOrderClosure(L, true);
 }
 
 static int LmdbTx__Dbi(lua_State *L) {
@@ -1264,12 +1240,51 @@ static bool PushValueByType(lua_State *L, const char *val, size_t len, int type)
     }
 }
 
+static int CreateLuaDbOrderClosure(lua_State *L, bool with_enum) {
+    LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
+
+    MDB_cursor *cur;
+    int err = mdb_cursor_open(loc->txn, loc->dbi, &cur);
+    if (err != 0) {
+        luaL_error(L, "%s", mdb_strerror(err));
+        return 0;
+    }
+
+    // Generate the given prefix
+    size_t len;
+    char *last = GetLmdbKeyFromLua(L, &len, 2, lua_gettop(L));
+    size_t pfxlen;
+    char *pfx = GetKeyPrefix(last, len, &pfxlen);
+
+    // Get a full userdatum
+    LuaDB_LmdbOrder *curloc = lua_newuserdata(L, sizeof(LuaDB_LmdbOrder));
+    curloc->cur = cur;
+    curloc->prefix = pfx;
+    curloc->pfxlen = pfxlen;
+    curloc->last = (len > 0) ? ComputeNextLexicalValue(last, len) : NULL;
+    curloc->lastlen = len;
+    curloc->op = MDB_SET_RANGE;
+
+    // Set the Cursor metatable
+    luaL_getmetatable(L, LMDB_CURSOR_REGISTRY_NAME);
+    lua_setmetatable(L, -2);
+
+    // Push an integer value for the enumeration of iterations
+    lua_pushinteger(L, (with_enum) ? 0 : -1);
+
+    // Push the private LuaDbOrderTxClosure function on the stack as a closure
+    // containing the previously declared cursor as it's upvalue
+    lua_pushcclosure(L, &LuaDbOrderTxClosure, 2);
+    return 1;
+}
+
 // Emulate the $ORDER function from MUMPS. Iterate over the keys in
 // key order, using prefix comparison to verify that we're only ever
 // considering "child" nodes.
 static int LuaDbOrderTxClosure(lua_State *L) {
     LuaDB_LmdbOrder *cur = luaL_checkudata(L, lua_upvalueindex(1),
                                             LMDB_CURSOR_REGISTRY_NAME);
+    lua_Integer iters = luaL_checkinteger(L, lua_upvalueindex(2));
 
     if (!cur) {
         luaL_error(L, "LMDB order cursor not found");
@@ -1308,13 +1323,23 @@ static int LuaDbOrderTxClosure(lua_State *L) {
         return 0;
     }
 
+    // If there was an enumeration value, increment it, push it,
+    // and swap it so it is at the top of the stack
+    if (iters >= 0) {
+        iters++;
+        lua_pushinteger(L, iters);
+        lua_pushvalue(L, -1);
+        lua_replace(L, lua_upvalueindex(2));
+        lua_rotate(L, -2, 1);
+    }
+
     // Swap out the previous visited node with the current
     char *new = ReplaceLastKeySegment(cur->last, cur->lastlen,
                                       &cur->lastlen, len, type, seg);
     free(cur->last);
     cur->last = ComputeNextLexicalValue(new, cur->lastlen);
 
-    return 1;
+    return (iters >= 0) ? 2 : 1;
 }
 
 // Create the metatable for LMDB Environment objects.
