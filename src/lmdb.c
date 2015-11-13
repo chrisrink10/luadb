@@ -33,10 +33,12 @@ static const int LMDB_DEFAULT_CURSOR_COUNT = 10;
 static const int LMDB_MAX_KEY_SEGMENTS = 32;
 static const int LMDB_MAX_KEY_SEG_LENGTH = UCHAR_MAX;
 
+#define LMDB_EMPTY_CHAR '\x01'
 #define LMDB_BOOLEAN_CHAR 'b'
 #define LMDB_INTEGER_CHAR 'i'
 #define LMDB_NUMERIC_CHAR 'n'
 #define LMDB_STRING_CHAR 's'
+static const char LMDB_EMPTY_TYPE = LMDB_EMPTY_CHAR;
 static const char LMDB_BOOLEAN_TYPE = LMDB_BOOLEAN_CHAR;
 static const char LMDB_INTEGER_TYPE = LMDB_INTEGER_CHAR;
 static const char LMDB_NUMERIC_TYPE = LMDB_NUMERIC_CHAR;
@@ -101,7 +103,7 @@ static int LmdbEnvReaderTableCreate(const char *msg, lua_State *L);
 static void AddTxToLmdbEnvRefTable(lua_State *L, MDB_env *env, MDB_txn *txn, int idx);
 static void RemoveTxFromLmdbEnvRefTable(lua_State *L, MDB_env *env, MDB_txn *txn, int idx);
 static char *CreateLmdbEnvRefTable(lua_State *L);
-static char *GetLmdbKeyFromLua(lua_State *L, size_t *len, int idx, int last);
+static char *GetLmdbKeyFromLua(lua_State *L, size_t *len, int idx, int last, bool allow_nil_last);
 static bool PushValueByType(lua_State *L, const char *val, size_t len, int type);
 static int CreateLuaDbOrderClosure(lua_State *L, bool with_enum);
 static int LuaDbOrderTxClosure(lua_State *L);
@@ -632,7 +634,7 @@ static int LmdbTx_Delete(lua_State *L) {
     MDB_val key;
 
     // Create a LMDB key from multiple input parameters
-    char *tkey = GetLmdbKeyFromLua(L, &key.mv_size, 2, lua_gettop(L));
+    char *tkey = GetLmdbKeyFromLua(L, &key.mv_size, 2, lua_gettop(L), false);
     key.mv_data = tkey;
 
     // Delete the value in the database
@@ -666,7 +668,7 @@ static int LmdbTx__Dump(lua_State *L) {
 
     // Generate the prefix if there is one
     size_t pfxlen;
-    char *prefix = GetLmdbKeyFromLua(L, &pfxlen, 2, lua_gettop(L));
+    char *prefix = GetLmdbKeyFromLua(L, &pfxlen, 2, lua_gettop(L), false);
     if (pfxlen > 0) {
         op = MDB_SET_RANGE;
         key.mv_size = pfxlen;
@@ -699,7 +701,7 @@ static int LmdbTx_Get(lua_State *L) {
     MDB_val val;
 
     // Create a LMDB key from multiple input parameters
-    char *tkey = GetLmdbKeyFromLua(L, &key.mv_size, 2, lua_gettop(L));
+    char *tkey = GetLmdbKeyFromLua(L, &key.mv_size, 2, lua_gettop(L), false);
     key.mv_data = tkey;
 
     // Get the value in the database
@@ -730,7 +732,7 @@ static int LmdbTx_Put(lua_State *L) {
     val.mv_data = (void*)tval;
 
     // Create a LMDB key from multiple input parameters
-    char *tkey = GetLmdbKeyFromLua(L, &key.mv_size, 3, lua_gettop(L));
+    char *tkey = GetLmdbKeyFromLua(L, &key.mv_size, 3, lua_gettop(L), false);
     key.mv_data = tkey;
 
     // Put the values into the database
@@ -756,7 +758,7 @@ static int LmdbTx_Next(lua_State *L) {
 
     // Generate the prefix if there is one
     size_t pfxlen;
-    char *prefix = GetLmdbKeyFromLua(L, &pfxlen, 2, lua_gettop(L));
+    char *prefix = GetLmdbKeyFromLua(L, &pfxlen, 2, lua_gettop(L), true);
 
     // Skip to the next node at the same depth
     do {
@@ -1148,7 +1150,7 @@ static void RemoveTxFromLmdbEnvRefTable(lua_State *L, MDB_env *env, MDB_txn *txn
 // Concatenate all of the variadic Lua parameters into a single key and
 // return that (and length). Note that all parameters between `idx` and
 // `last` will be considered as string keys.
-static char *GetLmdbKeyFromLua(lua_State *L, size_t *len, int idx, int last) {
+static char *GetLmdbKeyFromLua(lua_State *L, size_t *len, int idx, int last, bool allow_nil_last) {
     assert(L);
     int elems = last - idx + 1;
     assert(elems >= 0);
@@ -1180,6 +1182,13 @@ static char *GetLmdbKeyFromLua(lua_State *L, size_t *len, int idx, int last) {
                 lens[i] = 1;
                 types[i] = LMDB_BOOLEAN_TYPE;
                 break;
+            case LUA_TNIL:              // Fall through if nil not allowed
+                if (allow_nil_last && (i == (elems - 1))) {
+                    keys[i] = "\0";
+                    lens[i] = 1;
+                    types[i] = LMDB_EMPTY_TYPE;
+                    break;
+                }
             default:
                 luaL_error(L, "type '%s' not permitted in keys", lua_typename(L, type));
                 return NULL;
@@ -1240,6 +1249,7 @@ static bool PushValueByType(lua_State *L, const char *val, size_t len, int type)
     }
 }
 
+// Create the LuaDB order closure and push it onto the stack.
 static int CreateLuaDbOrderClosure(lua_State *L, bool with_enum) {
     LuaDB_LmdbTx *loc = CheckLmdbTxParam(L, 1);
 
@@ -1252,7 +1262,7 @@ static int CreateLuaDbOrderClosure(lua_State *L, bool with_enum) {
 
     // Generate the given prefix
     size_t len;
-    char *last = GetLmdbKeyFromLua(L, &len, 2, lua_gettop(L));
+    char *last = GetLmdbKeyFromLua(L, &len, 2, lua_gettop(L), true);
     size_t pfxlen;
     char *pfx = GetKeyPrefix(last, len, &pfxlen);
 
