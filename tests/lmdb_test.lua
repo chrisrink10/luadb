@@ -186,6 +186,7 @@ function test_tx__dbi()
   tx:close()
 end
 
+-- Test that we can verify whether nodes or their children contain data
 function test_tx_data()
   local tx1 = testdb:begin()
   tx1:put("", "1A1")

@@ -37,9 +37,10 @@ end
 -- Increment the fail counter for the current case
 function LuaTest:_fail(info)
   self.cases[self.cur]["fails"] = self.cases[self.cur]["fails"] + 1
-  local debuginfo = debug.getinfo(3, "n")
+  local debuginfo = debug.getinfo(3)
   local func = debuginfo["name"]
-  local infostr = string.format("[%s] %s", func, info)
+  local line = debuginfo["currentline"]
+  local infostr = string.format("[%s:%s] %s", func, line, info)
   table.insert(self.cases[self.cur]["fail_info"], infostr)
 end
 
