@@ -38,6 +38,10 @@ static void UpdateLuaPackagePath(lua_State *L, const char *path, bool truncate);
  */
 
 lua_State *LuaDB_NewState(void) {
+    return LuaDB_NewStateWithPaths(NULL, 0);
+}
+
+lua_State *LuaDB_NewStateWithPaths(const char **paths, size_t npaths) {
     lua_State *L = luaL_newstate();
     if (!L) {
         return NULL;
@@ -47,6 +51,12 @@ lua_State *LuaDB_NewState(void) {
     LuaDB_JsonAddLib(L);
     LuaDB_LmdbAddLib(L);
     LuaDB_UuidAddLib(L);
+
+    if (paths && npaths > 0) {
+        for (size_t i = 0; i < npaths; i++) {
+            LuaDB_PathAddAbsolute(L, paths[i]);
+        }
+    }
 
     return L;
 }

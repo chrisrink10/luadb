@@ -18,6 +18,19 @@
 lua_State *LuaDB_NewState(void);
 
 /**
+ * @brief Create a new @c lua_State object instantiated with
+ * the correct LuaDB libraries in the namespace. The given paths will
+ * be added inth the `package.path` automatically when the state is
+ * created.
+ *
+ * @param paths an array of C-strings containing paths Lua should look
+ *              for scripts
+ * @param npaths the number of paths in @c paths
+ * @returns a @c lua_State object with all the LuaDB libraries and paths
+ */
+lua_State *LuaDB_NewStateWithPaths(const char **paths, size_t npaths);
+
+/**
  * @brief Add the given path to the Lua `package.path` global exactly
  * as it is given.
  */

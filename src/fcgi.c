@@ -39,8 +39,8 @@ typedef enum LuaDB_FcgxResult {
     LUADB_FCGX_FATAL,
 } LuaDB_FcgxResult;
 
-static int InitFcgxRequest(FCGX_Request *req, const char *path);
-static LuaDB_FcgxResult ProcessFcgxRequest(FCGX_Request *req, LuaDB_EnvConfig *config);
+static int InitFcgxRequest(FCGX_Request *req, const char *device);
+static LuaDB_FcgxResult ProcessFcgxRequest(FCGX_Request *req, LuaDB_EnvConfig *config, const char **paths, size_t npaths);
 static bool RouteHttpRequest(lua_State *L);
 static void SendHttpResponse(lua_State *L, FCGX_Request *req);
 static void SendHttpResponseStatus(lua_State *L, FCGX_Request *req);
@@ -59,11 +59,15 @@ static char *ConvertEnvVarToLower(const char *in, size_t len);
  * PUBLIC FUNCTIONS
  */
 
-int LuaDB_FcgiStartWorker(const char *path) {
+int LuaDB_FcgiStartWorker(const char *device) {
+    return LuaDB_FcgiStartWorkerWithPaths(device, NULL, 0);
+}
+
+int LuaDB_FcgiStartWorkerWithPaths(const char *device, const char **paths, size_t npaths) {
     FCGX_Request req;
     LuaDB_EnvConfig config;
     openlog("luadb", LOG_PID, LOG_USER);
-    syslog(LOG_INFO, "Starting FastCGI worker on %s", path);
+    syslog(LOG_INFO, "Starting FastCGI worker on %s", device);
 
     // Read the default environment configuration
     if (!LuaDB_ReadEnvironmentConfig(&config)) {
@@ -72,7 +76,7 @@ int LuaDB_FcgiStartWorker(const char *path) {
     }
 
     // Initialize the FCGI app request
-    if (!InitFcgxRequest(&req, path)) {
+    if (!InitFcgxRequest(&req, device)) {
         syslog(LOG_ERR, "Failed to intialize FastCGI request.");
         LuaDB_CleanEnvironmentConfig(&config);
         return EXIT_FAILURE;
@@ -80,7 +84,7 @@ int LuaDB_FcgiStartWorker(const char *path) {
 
     // Accept FastCGI requests on the given device
     while (FCGX_Accept_r(&req) >= 0) {
-        LuaDB_FcgxResult result = ProcessFcgxRequest(&req, &config);
+        LuaDB_FcgxResult result = ProcessFcgxRequest(&req, &config, paths, npaths);
         if (result == LUADB_FCGX_FATAL) {
             syslog(LOG_CRIT, "Failed reading the current request. Exiting.");
             LuaDB_CleanEnvironmentConfig(&config);
@@ -89,7 +93,7 @@ int LuaDB_FcgiStartWorker(const char *path) {
     }
 
     LuaDB_CleanEnvironmentConfig(&config);
-    syslog(LOG_INFO, "Stopping FastCGI worker on %s", path);
+    syslog(LOG_INFO, "Stopping FastCGI worker on %s", device);
     return EXIT_SUCCESS;
 }
 
@@ -98,14 +102,14 @@ int LuaDB_FcgiStartWorker(const char *path) {
  */
 
 // Initialize the FCGX request structure.
-static int InitFcgxRequest(FCGX_Request *req, const char *path) {
+static int InitFcgxRequest(FCGX_Request *req, const char *device) {
     if (FCGX_Init() != 0) {
         syslog(LOG_ERR, "Failed to intialize FastCGI library.");
         return 0;
     }
-    int sock = FCGX_OpenSocket(path, FASTCGI_DEFAULT_BACKLOG);
+    int sock = FCGX_OpenSocket(device, FASTCGI_DEFAULT_BACKLOG);
     if (sock == -1) {
-        syslog(LOG_ERR, "Could not open FastCGI socket '%s'", path);
+        syslog(LOG_ERR, "Could not open FastCGI socket '%s'", device);
         return 0;
     }
     if (FCGX_InitRequest(req, sock, 0) != 0) {
@@ -122,9 +126,9 @@ static int InitFcgxRequest(FCGX_Request *req, const char *path) {
 // 3. Call the routing engine with the request table.
 // 4. Process the response from the routing engine and return it to
 //    the web server.
-static LuaDB_FcgxResult ProcessFcgxRequest(FCGX_Request *req, LuaDB_EnvConfig *config) {
+static LuaDB_FcgxResult ProcessFcgxRequest(FCGX_Request *req, LuaDB_EnvConfig *config, const char **paths, size_t npaths) {
     // Create a new Lua state
-    lua_State *L = LuaDB_NewState();
+    lua_State *L = LuaDB_NewStateWithPaths(paths, npaths);
     if (!L) {
         syslog(LOG_ERR, "Could not create new lua_State object.");
         return LUADB_FCGX_ERROR;
