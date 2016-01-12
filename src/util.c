@@ -14,6 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "deps/lua/lua.h"
+
 #include "luadb.h"
 #include "util.h"
 
@@ -174,6 +176,11 @@ char *LuaDB_StrDupLen(const char *in, size_t n) {
     memcpy(new, in, n);
     new[n] = '\0';
     return new;
+}
+
+bool LuaDB_NumberIsInt(lua_Number n, lua_Integer *v) {
+    *v = (lua_Integer)n;
+    return ((n - (lua_Number)*v) == 0.0);
 }
 
 /*

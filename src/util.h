@@ -71,4 +71,14 @@ char *LuaDB_StrDup(const char *in);
  */
 char *LuaDB_StrDupLen(const char *in, size_t n);
 
+/**
+ * @brief Verify if a Lua numeric value is an integer.
+ *
+ * @param n a numeric value from Lua
+ * @param v a pointer to the Lua integer version of @c n, if
+ *          this function returns true
+ * @returns true if value in @c n was integral; false otherwise
+ */
+bool LuaDB_NumberIsInt(lua_Number n, lua_Integer *v);
+
 #endif //LUADB_UTIL_H

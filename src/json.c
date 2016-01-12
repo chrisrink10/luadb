@@ -38,7 +38,6 @@ static JsonNode *LuaValueToJson(lua_State *L);
 static void JsonToLuaValuePrivate(lua_State *L, JsonNode *json, int i);
 static inline void SetTableAsJsonArray(lua_State *L, int idx);
 static JsonNode *LuaTableToJsonPrivate(lua_State *L, int idx);
-static bool LuaNumberIsInt(lua_Number n, int *v);
 static inline bool LuaTableIsJsonArray(lua_State *L, int idx);
 static void AddTableRef(lua_State *L, int upvidx, int idx);
 static bool IsRefCycle(lua_State *L, int upvidx, int idx);
@@ -278,7 +277,7 @@ static JsonNode *LuaTableToJsonPrivate(lua_State *L, int idx) {
     char *key = NULL;
     char numstr[JSON_STRING_KEY_DIGITS];
     lua_Number num;
-    int inum = 0;
+    lua_Integer inum = 0;
     size_t len;
 
     luaL_checkstack(L, 2, "out of memory");
@@ -298,8 +297,8 @@ static JsonNode *LuaTableToJsonPrivate(lua_State *L, int idx) {
         switch (ktype) {
             case LUA_TNUMBER:
                 num = lua_tonumber(L, idx+1);
-                if (LuaNumberIsInt(num, &inum)) {
-                    sprintf(numstr, "%d", inum);
+                if (LuaDB_NumberIsInt(num, &inum)) {
+                    sprintf(numstr, "%lld", inum);
                 } else {
                     sprintf(numstr, "%f", num);
                 }
@@ -333,12 +332,6 @@ static JsonNode *LuaTableToJsonPrivate(lua_State *L, int idx) {
     }
 
     return json;
-}
-
-// Check if a Lua number is integral and return that value in v if so.
-static bool LuaNumberIsInt(lua_Number n, int *v) {
-    *v = (int)n;
-    return ((n - (double)*v) == 0.0);
 }
 
 // Return true if the value at the given index is considered a JSON array.
