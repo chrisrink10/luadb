@@ -19,10 +19,10 @@
 #include "deps/fcgi/fcgiapp.h"
 
 #include "config.h"
-#include "state.h"
 #include "fcgi.h"
 #include "log.h"
-#include "util.h"
+#include "query.h"
+#include "state.h"
 
 static const int FASTCGI_DEFAULT_BACKLOG = 10;
 static const int FASTCGI_DEFAULT_NUM_VARS = 20;
@@ -488,10 +488,10 @@ static bool ReadHttpRequestQueryString(lua_State *L, const char *qs, size_t *len
     while (LuaDB_QueryIterNext(&iter)) {
         // Decode the query string values
         size_t keylen;
-        char *key = LuaDB_QueryStrDecode(iter.key, iter.keylen, &keylen);
+        char *key = LuaDB_QueryIterKey(&iter, &keylen);
         if (!key) { continue; }
         size_t vallen;
-        char *val = LuaDB_QueryStrDecode(iter.val, iter.vallen, &vallen);
+        char *val = LuaDB_QueryIterVal(&iter, &vallen);
 
         // Push the key onto the stack twice
         lua_pushlstring(L, key, keylen);

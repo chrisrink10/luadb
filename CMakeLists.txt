@@ -126,6 +126,7 @@ set(SOURCE_FILES src/config.c
                  src/lmdb.c
                  src/log.c
                  src/main.c
+                 src/query.c
                  src/state.c
                  src/util.c
                  src/uuid.c)
